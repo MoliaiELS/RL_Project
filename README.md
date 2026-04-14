@@ -96,6 +96,14 @@ Replay a saved maze replay:
 python eval/evaluate.py --env-id Maze-Easy --model-path saved_models/<timestamp>-tdlambda-Maze-Easy/tdlambda_Maze-Easy.npy --replay
 ```
 
+## Train Baseline Model
+
+```bash
+python train/train_q.py --env-id Maze-Easy --num-episodes 200
+```
+
+Change env-id for further experiments.
+
 ## Notes
 - `TDZeroAgent` uses linear Q-learning with tile-style state encoding.
 - `TDLambdaAgent` is implemented from scratch using linear Q(λ) with accumulating eligibility traces.
