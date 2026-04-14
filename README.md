@@ -52,12 +52,6 @@ Train TD(λ) on a MiniGrid task:
 python train/train_td.py --env-id MiniGrid-Empty-8x8-v0 --num-episodes 200 --lambda-value 0.8 --epsilon 1.0 --epsilon-decay 0.995 --epsilon-min 0.05
 ```
 
-Train PPO for comparison:
-
-```bash
-python train/train_ppo.py --env-id MiniGrid-Empty-8x8-v0 --total-timesteps 100000
-```
-
 Model and plot files are saved under a timestamped folder inside `saved_models` by default, for example:
 
 ```text
@@ -98,8 +92,16 @@ python eval/evaluate.py --env-id Maze-Easy --model-path saved_models/<timestamp>
 
 ## Train Baseline Model
 
+Train Q-Learning for comparison:
+
 ```bash
 python train/train_q.py --env-id Maze-Easy --num-episodes 200
+```
+
+Train PPO for comparison:
+
+```bash
+python train/train_ppo.py --env-id MiniGrid-Empty-8x8-v0 --total-timesteps 100000
 ```
 
 Change env-id for further experiments.
