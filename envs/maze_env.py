@@ -34,9 +34,9 @@ MAZE_LAYOUTS = {
     "Maze-Hard": [
         "########",
         "#S.#.#.#",
-        "#.#.#.#.#",
-        "#...#...#",
-        "###.###.#",
+        "#.#.#.##",
+        "#...#..#",
+        "###.##.#",
         "#......#",
         "#.####G#",
         "########",
@@ -63,6 +63,17 @@ def parse_auto_maze_id(layout_id: str) -> tuple[int, int] | None:
         height = int(match.group(2))
         return width, height
     return None
+
+
+def _validate_layout(layout: list[str], layout_id: str) -> None:
+    if not layout:
+        raise ValueError(f"Maze layout {layout_id!r} is empty")
+    expected_width = len(layout[0])
+    if any(len(row) != expected_width for row in layout):
+        raise ValueError(
+            f"Maze layout {layout_id!r} contains inconsistent row lengths: "
+            f"expected {expected_width}, got {[len(row) for row in layout]}"
+        )
 
 
 def _ensure_odd(value: int) -> int:
@@ -140,6 +151,7 @@ class MazeEnv(gym.Env):
         else:
             if layout_id not in MAZE_LAYOUTS:
                 raise ValueError(f"Unknown maze layout: {layout_id}")
+            _validate_layout(MAZE_LAYOUTS[layout_id], layout_id)
             self._base_layout = [list(row) for row in MAZE_LAYOUTS[layout_id]]
             self.height = len(self._base_layout)
             self.width = len(self._base_layout[0])
@@ -176,6 +188,7 @@ class MazeEnv(gym.Env):
             self.grid = np.array(self._base_layout, dtype='<U1')
         elif self.layout_id == "Maze-Stage":
             selected = self.np_random.choice(["Maze-Easy", "Maze-Medium", "Maze-Hard"])
+            _validate_layout(MAZE_LAYOUTS[selected], selected)
             self.grid = np.array([list(row) for row in MAZE_LAYOUTS[selected]], dtype='<U1')
         else:
             self.grid = np.array(self._base_layout, dtype='<U1')
