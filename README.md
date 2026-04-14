@@ -31,25 +31,25 @@ The project also supports auto-generated mazes via `mazelib` when installed. If 
 Train TD(λ) on a maze task with obstacles:
 
 ```bash
-python train/train_td.py --env-id Maze-Easy --num-episodes 200 --lambda-value 0.8
+python train/train_td.py --env-id Maze-Easy --num-episodes 1000 --lambda-value 0.8
 ```
 
 Train TD(λ) on a harder staged maze:
 
 ```bash
-python train/train_td.py --env-id Maze-Stage --num-episodes 200 --lambda-value 0.8
+python train/train_td.py --env-id Maze-Stage --num-episodes 1000 --lambda-value 0.8
 ```
 
 Train TD(λ) on an auto-generated maze:
 
 ```bash
-python train/train_td.py --env-id Maze-Auto-9x9 --num-episodes 200 --lambda-value 0.8
+python train/train_td.py --env-id Maze-Auto-9x9 --num-episodes 1000 --lambda-value 0.8
 ```
 
 Train TD(λ) on a MiniGrid task:
 
 ```bash
-python train/train_td.py --env-id MiniGrid-Empty-8x8-v0 --num-episodes 200 --lambda-value 0.8 --epsilon 1.0 --epsilon-decay 0.995 --epsilon-min 0.05
+python train/train_td.py --env-id MiniGrid-Empty-8x8-v0 --num-episodes 1000 --lambda-value 0.8 --epsilon 1.0 --epsilon-decay 0.995 --epsilon-min 0.05
 ```
 
 Model and plot files are saved under a timestamped folder inside `saved_models` by default, for example:
