@@ -34,9 +34,18 @@ class BaseAgent(ABC):
     ) -> None:
         raise NotImplementedError
 
+    def argmax_action(self, q_values: np.ndarray) -> int:
+        if np.all(np.isnan(q_values)):
+            return int(self.rng.integers(self.n_actions))
+        max_value = np.nanmax(q_values)
+        max_indices = np.flatnonzero(q_values == max_value)
+        if max_indices.size == 1:
+            return int(max_indices[0])
+        return int(self.rng.choice(max_indices))
+
     def greedy_action(self, state: np.ndarray) -> int:
         q_values = self.q_values(state)
-        return int(np.argmax(q_values))
+        return self.argmax_action(q_values)
 
     def q_values(self, state: np.ndarray) -> np.ndarray:
         raise NotImplementedError

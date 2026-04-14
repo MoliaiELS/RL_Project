@@ -24,8 +24,9 @@ class PPOAgent:
         self.seed = seed
         self.model = None
 
-    def build(self) -> None:
-        env = gym.make(self.env_id)
+    def build(self, env=None) -> None:
+        if env is None:
+            env = gym.make(self.env_id)
         self.model = PPO(
             "MlpPolicy",
             env,

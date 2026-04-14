@@ -1,14 +1,37 @@
-import gymnasium as gym
 import numpy as np
-from gym_minigrid.wrappers import FlatObsWrapper
+
+try:
+    import gymnasium as gym
+    import minigrid.envs  # noqa: F401
+    from minigrid.wrappers import FlatObsWrapper
+    _USE_GYM = False
+except ImportError:
+    import gym
+    import gym_minigrid.envs  # noqa: F401
+    from gym_minigrid.wrappers import FlatObsWrapper
+    _USE_GYM = True
+
+from .maze_env import make_maze_env
 
 
-def make_minigrid_env(env_id: str = "MiniGrid-Empty-8x8-v0", seed: int | None = None) -> gym.Env:
-    env = gym.make(env_id)
+def make_minigrid_env(env_id: str = "MiniGrid-Empty-8x8-v0", seed: int | None = None):
+    try:
+        env = gym.make(env_id)
+    except Exception:
+        if _USE_GYM:
+            raise
+        from gym import make as gym_make
+        env = gym_make(env_id)
     env = FlatObsWrapper(env)
     if seed is not None:
         env.reset(seed=seed)
     return env
+
+
+def make_env(env_id: str = "MiniGrid-Empty-8x8-v0", seed: int | None = None):
+    if env_id.startswith("Maze-"):
+        return make_maze_env(env_id, seed=seed)
+    return make_minigrid_env(env_id, seed=seed)
 
 
 class MiniGridEncoder:
@@ -28,4 +51,4 @@ class MiniGridEncoder:
         return x
 
 
-__all__ = ["make_minigrid_env", "MiniGridEncoder"]
+__all__ = ["make_minigrid_env", "make_env", "MiniGridEncoder"]

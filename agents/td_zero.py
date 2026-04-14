@@ -8,7 +8,7 @@ class TDZeroAgent(BaseAgent):
         state_size: int,
         n_actions: int,
         gamma: float = 0.99,
-        alpha: float = 1e-3,
+        alpha: float = 1e-5,
         epsilon: float = 0.1,
         seed: int | None = None,
     ):
@@ -21,7 +21,7 @@ class TDZeroAgent(BaseAgent):
     def select_action(self, state: np.ndarray) -> int:
         if self.rng.random() < self.epsilon:
             return int(self.rng.integers(self.n_actions))
-        return int(np.argmax(self.q_values(state)))
+        return self.argmax_action(self.q_values(state))
 
     def update(
         self,

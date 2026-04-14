@@ -1,6 +1,13 @@
 import argparse
+import os
+import sys
 import numpy as np
-from envs.minigrid_env import make_minigrid_env, MiniGridEncoder
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from envs.minigrid_env import make_env, MiniGridEncoder
 from agents.td_zero import TDZeroAgent
 from agents.td_lambda import TDLambdaAgent
 
@@ -32,7 +39,7 @@ def load_td_agent(agent_type: str, state_size: int, n_actions: int, path: str, a
 
 
 def evaluate(args):
-    env = make_minigrid_env(args.env_id, seed=args.seed)
+    env = make_env(args.env_id, seed=args.seed)
     encoder = MiniGridEncoder(env.observation_space)
     agent = load_td_agent(args.agent_type, encoder.size, env.action_space.n, args.model_path, args)
 
@@ -44,11 +51,23 @@ def evaluate(args):
         truncated = False
         total_reward = 0.0
 
+        if args.render:
+            print(f"Episode {episode} initial state")
+            try:
+                env.render()
+            except Exception as exc:
+                print(f"Render error: {exc}")
+
         while not terminated and not truncated:
             action = agent.greedy_action(state)
             observation, reward, terminated, truncated, _ = env.step(action)
             state = encoder.encode(observation)
             total_reward += reward
+            if args.render:
+                try:
+                    env.render()
+                except Exception as exc:
+                    print(f"Render error: {exc}")
 
         results.append(total_reward)
         print(f"Eval episode {episode}: reward={total_reward:.3f}")
@@ -63,8 +82,9 @@ def parse_args():
     parser.add_argument("--agent-type", type=str, default="tdlambda", choices=["td0", "tdlambda"])
     parser.add_argument("--model-path", type=str, required=True)
     parser.add_argument("--eval-episodes", type=int, default=20)
+    parser.add_argument("--render", action="store_true", help="Render each step during evaluation")
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--alpha", type=float, default=1e-3)
+    parser.add_argument("--alpha", type=float, default=1e-5)
     parser.add_argument("--lambda-value", type=float, default=0.8)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
