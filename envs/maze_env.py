@@ -243,22 +243,41 @@ class MazeEnv(gym.Env):
         obs[agent_y, agent_x, 2] = 1
         return obs
 
-    def render(self):
-        display = []
-        for y in range(self.height):
-            row = []
-            for x in range(self.width):
-                if (y, x) == self.agent_pos:
-                    row.append("A")
-                elif (y, x) == self.goal_pos:
-                    row.append("G")
-                elif self.grid[y, x] == "#":
-                    row.append("#")
-                else:
-                    row.append(".")
-            display.append("".join(row))
-        print("\n".join(display))
-        print(f"step={self.step_count} pos={self.agent_pos} reward_goal={self.agent_pos == self.goal_pos}")
+    def _get_render_frame(self) -> np.ndarray:
+        frame = np.full((self.height, self.width, 3), 255, dtype=np.uint8)
+        frame[self.grid == "#"] = [80, 80, 80]
+        goal_y, goal_x = self.goal_pos
+        frame[goal_y, goal_x] = [0, 200, 0]
+        agent_y, agent_x = self.agent_pos
+        frame[agent_y, agent_x] = [0, 0, 255]
+        return frame
+
+    def render(self, mode: str = "human"):
+        frame = self._get_render_frame()
+        if mode == "rgb_array":
+            return frame
+        if mode == "human":
+            try:
+                import matplotlib.pyplot as plt
+                plt.imshow(frame)
+                plt.axis("off")
+                plt.pause(0.001)
+            except Exception:
+                display = []
+                for y in range(self.height):
+                    row = []
+                    for x in range(self.width):
+                        if (y, x) == self.agent_pos:
+                            row.append("A")
+                        elif (y, x) == self.goal_pos:
+                            row.append("G")
+                        elif self.grid[y, x] == "#":
+                            row.append("#")
+                        else:
+                            row.append(".")
+                    display.append("".join(row))
+                print("\n".join(display))
+                print(f"step={self.step_count} pos={self.agent_pos} reward_goal={self.agent_pos == self.goal_pos}")
 
     def close(self):
         return None

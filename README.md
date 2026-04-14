@@ -66,16 +66,34 @@ saved_models/20260414-133548-tdlambda-Maze-Easy/
   tdlambda_learning_curve.png
 ```
 
-Evaluate a trained TD agent:
+Evaluate a trained TD agent and save replay frames for later playback. Evaluation now also writes `eval_summary.json` and `eval_rewards.png` into the same model folder:
 
 ```bash
-python eval/evaluate.py --env-id MiniGrid-Empty-8x8-v0 --model-path saved_models/<timestamp>-tdlambda-MiniGrid-Empty-8x8-v0/tdlambda_MiniGrid-Empty-8x8-v0.npy
+python eval/evaluate.py --env-id MiniGrid-Empty-8x8-v0 --model-path saved_models/<timestamp>-tdlambda-MiniGrid-Empty-8x8-v0/tdlambda_MiniGrid-Empty-8x8-v0.npy --render --save-replay
+```
+
+Replay a saved TD agent animation from the model folder:
+
+```bash
+python eval/evaluate.py --env-id MiniGrid-Empty-8x8-v0 --model-path saved_models/<timestamp>-tdlambda-MiniGrid-Empty-8x8-v0/tdlambda_MiniGrid-Empty-8x8-v0.npy --replay
+```
+
+If the saved model contains metadata, you can omit `--env-id` and the evaluator will infer the environment from the model folder:
+
+```bash
+python eval/evaluate.py --model-path saved_models/<timestamp>-tdlambda-MiniGrid-Empty-8x8-v0/tdlambda_MiniGrid-Empty-8x8-v0.npy --replay
 ```
 
 Render a trained TD agent in the maze env:
 
 ```bash
-python eval/evaluate.py --env-id Maze-Easy --model-path saved_models/<timestamp>-tdlambda-Maze-Easy/tdlambda_Maze-Easy.npy --render
+python eval/evaluate.py --env-id Maze-Easy --model-path saved_models/<timestamp>-tdlambda-Maze-Easy/tdlambda_Maze-Easy.npy --render --save-replay
+```
+
+Replay a saved maze replay:
+
+```bash
+python eval/evaluate.py --env-id Maze-Easy --model-path saved_models/<timestamp>-tdlambda-Maze-Easy/tdlambda_Maze-Easy.npy --replay
 ```
 
 ## Notes

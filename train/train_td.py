@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 import numpy as np
@@ -100,14 +101,35 @@ def run_training(args):
     os.makedirs(run_dir, exist_ok=True)
 
     model_path = os.path.join(run_dir, f"{args.method}_{safe_env_id}.npy")
+    meta_path = os.path.join(run_dir, "metadata.json")
+    metadata = {
+        "env_id": args.env_id,
+        "method": args.method,
+        "num_episodes": int(args.num_episodes),
+        "log_interval": int(args.log_interval),
+        "state_size": int(encoder.size),
+        "n_actions": int(env.action_space.n),
+        "alpha": float(args.alpha),
+        "gamma": float(args.gamma),
+        "epsilon": float(args.epsilon),
+        "epsilon_min": float(args.epsilon_min),
+        "epsilon_decay": float(args.epsilon_decay),
+        "lambda_value": float(args.lambda_value),
+        "seed": int(args.seed),
+        "save_dir": run_dir,
+    }
     if hasattr(agent, "save"):
         agent.save(model_path)
+    with open(meta_path, "w", encoding="utf-8") as meta_file:
+        json.dump(metadata, meta_file, indent=2)
+
     plot_learning_curve(
         history,
         title=f"{args.method.upper()} on {args.env_id}",
         save_path=os.path.join(run_dir, f"{args.method}_learning_curve.png"),
     )
     print(f"Saved trained model to {model_path}")
+    print(f"Saved metadata to {meta_path}")
     print(f"Saved plot to {os.path.join(run_dir, f'{args.method}_learning_curve.png')}")
 
 
