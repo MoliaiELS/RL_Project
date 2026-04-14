@@ -54,14 +54,17 @@ MAZE_LAYOUTS = {
 }
 
 
-def parse_auto_maze_id(layout_id: str) -> tuple[int, int] | None:
+def parse_auto_maze_id(layout_id: str) -> tuple[int, int, bool] | None:
     if layout_id == "Maze-Auto":
-        return 9, 9
-    match = re.match(r"Maze-Auto-(\d+)x(\d+)$", layout_id)
+        return 9, 9, False
+    if layout_id == "Maze-Auto-Random":
+        return 9, 9, True
+    match = re.match(r"^Maze-Auto(?:-Random)?-(\d+)x(\d+)$", layout_id)
     if match:
         width = int(match.group(1))
         height = int(match.group(2))
-        return width, height
+        randomize = "-Random-" in layout_id
+        return width, height, randomize
     return None
 
 
@@ -144,7 +147,7 @@ class MazeEnv(gym.Env):
         self.auto_generate = self.auto_size is not None
 
         if self.auto_generate:
-            self.width, self.height = self.auto_size
+            self.width, self.height, self.auto_random = self.auto_size
             self.width = _ensure_odd(self.width)
             self.height = _ensure_odd(self.height)
             self._base_layout = None
@@ -173,7 +176,7 @@ class MazeEnv(gym.Env):
         self.goal_pos = (self.height - 2, self.width - 2)
         self.grid = None
 
-        if self.auto_generate:
+        if self.auto_generate and not self.auto_random:
             layout = generate_auto_maze_layout(self.width, self.height, seed=seed)
             self._base_layout = [list(row) for row in layout]
 
@@ -185,7 +188,11 @@ class MazeEnv(gym.Env):
 
         self.step_count = 0
         if self.auto_generate:
-            self.grid = np.array(self._base_layout, dtype='<U1')
+            if self.auto_random:
+                layout = generate_auto_maze_layout(self.width, self.height, seed=seed)
+                self.grid = np.array([list(row) for row in layout], dtype='<U1')
+            else:
+                self.grid = np.array(self._base_layout, dtype='<U1')
         elif self.layout_id == "Maze-Stage":
             selected = self.np_random.choice(["Maze-Easy", "Maze-Medium", "Maze-Hard"])
             _validate_layout(MAZE_LAYOUTS[selected], selected)
@@ -204,12 +211,18 @@ class MazeEnv(gym.Env):
     def step(self, action: int):
         self.step_count += 1
         next_pos = self._next_position(action)
-        if self._is_free(next_pos):
+        invalid_move = not self._is_free(next_pos)
+        if not invalid_move:
             self.agent_pos = next_pos
 
         terminated = self.agent_pos == self.goal_pos
         truncated = self.step_count >= self.max_steps
-        reward = 1.0 if terminated else 0.0
+        if terminated:
+            reward = 1.0
+        elif invalid_move:
+            reward = -0.01
+        else:
+            reward = 0.0
 
         obs = self._get_observation()
         info = {}

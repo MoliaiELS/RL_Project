@@ -46,6 +46,12 @@ Train TD(λ) on an auto-generated maze:
 python train/train_td.py --env-id Maze-Auto-9x9 --num-episodes 1000 --lambda-value 0.8
 ```
 
+Train TD(λ) on an auto-generated maze that regenerates every reset:
+
+```bash
+python train/train_td.py --env-id Maze-Auto-Random-9x9 --num-episodes 1000 --lambda-value 0.8
+```
+
 Train TD(λ) on a MiniGrid task:
 
 ```bash

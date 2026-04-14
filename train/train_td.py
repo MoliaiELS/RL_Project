@@ -38,6 +38,31 @@ def build_agent(method: str, state_size: int, n_actions: int, args):
     raise ValueError(f"Unsupported method: {method}")
 
 
+def evaluate_agent_greedy(agent, env, encoder, eval_episodes, seed):
+    saved_epsilon = agent.epsilon
+    agent.epsilon = 0.0
+    rewards = []
+    for episode in range(1, eval_episodes + 1):
+        observation, _ = env.reset(seed=seed + episode)
+        state = encoder.encode(observation)
+        if hasattr(agent, "new_episode"):
+            agent.new_episode()
+        terminated = False
+        truncated = False
+        total_reward = 0.0
+
+        while not terminated and not truncated:
+            action = agent.greedy_action(state)
+            observation, reward, terminated, truncated, _ = env.step(action)
+            state = encoder.encode(observation)
+            total_reward += reward
+
+        rewards.append(total_reward)
+
+    agent.epsilon = saved_epsilon
+    return rewards
+
+
 def run_training(args):
     env = make_env(args.env_id, seed=args.seed)
     encoder = MiniGridEncoder(env.observation_space)
@@ -94,6 +119,18 @@ def run_training(args):
                 f"Episode {episode}/{args.num_episodes}, mean reward {mean_reward:.3f}, "
                 f"last reward {total_reward:.3f}, epsilon {agent.epsilon:.3f}"
             )
+            if args.eval_interval > 0:
+                greedy_rewards = evaluate_agent_greedy(
+                    agent,
+                    env,
+                    encoder,
+                    args.eval_episodes,
+                    args.seed + episode,
+                )
+                print(
+                    f"Greedy eval ({args.eval_episodes} eps): mean {np.mean(greedy_rewards):.3f}, "
+                    f"min {np.min(greedy_rewards):.3f}, max {np.max(greedy_rewards):.3f}"
+                )
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     safe_env_id = args.env_id.replace('/', '_').replace(' ', '_')
@@ -144,6 +181,8 @@ def parse_args():
     parser.add_argument("--epsilon-min", type=float, default=0.05, help="Minimum epsilon after decay")
     parser.add_argument("--epsilon-decay", type=float, default=0.995, help="Multiplicative epsilon decay per episode")
     parser.add_argument("--lambda-value", type=float, default=0.9)
+    parser.add_argument("--eval-interval", type=int, default=0, help="Run greedy evaluation every N episodes during training")
+    parser.add_argument("--eval-episodes", type=int, default=5, help="Number of greedy evaluation episodes when eval_interval is enabled")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--log-interval", type=int, default=10)
     parser.add_argument("--save-dir", type=str, default="saved_models")
