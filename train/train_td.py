@@ -67,8 +67,14 @@ def run_training(args):
     env = make_env(args.env_id, seed=args.seed)
     encoder = MiniGridEncoder(env.observation_space)
     agent = build_agent(args.method, encoder.size, env.action_space.n, args)
+    if args.load_model:
+        if not os.path.isfile(args.load_model):
+            raise FileNotFoundError(f"Pretrained model not found: {args.load_model}")
+        agent.load(args.load_model)
+        print(f"Loaded pretrained model from {args.load_model}")
 
     history = []
+    greedy_eval_history = []
     for episode in range(1, args.num_episodes + 1):
         observation, _ = env.reset(seed=args.seed + episode)
         state = encoder.encode(observation)
@@ -119,18 +125,23 @@ def run_training(args):
                 f"Episode {episode}/{args.num_episodes}, mean reward {mean_reward:.3f}, "
                 f"last reward {total_reward:.3f}, epsilon {agent.epsilon:.3f}"
             )
-            if args.eval_interval > 0:
-                greedy_rewards = evaluate_agent_greedy(
-                    agent,
-                    env,
-                    encoder,
-                    args.eval_episodes,
-                    args.seed + episode,
-                )
-                print(
-                    f"Greedy eval ({args.eval_episodes} eps): mean {np.mean(greedy_rewards):.3f}, "
-                    f"min {np.min(greedy_rewards):.3f}, max {np.max(greedy_rewards):.3f}"
-                )
+
+        if args.eval_interval > 0 and episode % args.eval_interval == 0:
+            greedy_rewards = evaluate_agent_greedy(
+                agent,
+                env,
+                encoder,
+                args.eval_episodes,
+                args.seed + episode,
+            )
+            greedy_mean = float(np.mean(greedy_rewards))
+            greedy_min = float(np.min(greedy_rewards))
+            greedy_max = float(np.max(greedy_rewards))
+            greedy_eval_history.append((episode, greedy_mean, greedy_min, greedy_max))
+            print(
+                f"Greedy eval @ {episode}: mean {greedy_mean:.3f}, "
+                f"min {greedy_min:.3f}, max {greedy_max:.3f}"
+            )
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     safe_env_id = args.env_id.replace('/', '_').replace(' ', '_')
@@ -144,6 +155,8 @@ def run_training(args):
         "method": args.method,
         "num_episodes": int(args.num_episodes),
         "log_interval": int(args.log_interval),
+        "eval_interval": int(args.eval_interval),
+        "eval_episodes": int(args.eval_episodes),
         "state_size": int(encoder.size),
         "n_actions": int(env.action_space.n),
         "alpha": float(args.alpha),
@@ -154,6 +167,7 @@ def run_training(args):
         "lambda_value": float(args.lambda_value),
         "seed": int(args.seed),
         "save_dir": run_dir,
+        "loaded_model": args.load_model,
     }
     if hasattr(agent, "save"):
         agent.save(model_path)
@@ -165,6 +179,40 @@ def run_training(args):
         title=f"{args.method.upper()} on {args.env_id}",
         save_path=os.path.join(run_dir, f"{args.method}_learning_curve.png"),
     )
+    if greedy_eval_history:
+        eval_episode_ids = [int(entry[0]) for entry in greedy_eval_history]
+        eval_means = [entry[1] for entry in greedy_eval_history]
+        eval_mins = [entry[2] for entry in greedy_eval_history]
+        eval_maxs = [entry[3] for entry in greedy_eval_history]
+        plot_learning_curve(
+            history,
+            title=f"TD(λ) training and greedy eval on {args.env_id}",
+            save_path=os.path.join(run_dir, f"{args.method}_combined_learning_curve.png"),
+            secondary_rewards=eval_means,
+            secondary_x=eval_episode_ids,
+            secondary_label="Greedy eval mean",
+        )
+        plot_learning_curve(
+            eval_means,
+            title=f"Greedy eval mean on {args.env_id}",
+            save_path=os.path.join(run_dir, f"{args.method}_greedy_eval_curve.png"),
+        )
+        greedy_summary_path = os.path.join(run_dir, "greedy_eval_history.json")
+        with open(greedy_summary_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "eval_interval": args.eval_interval,
+                    "eval_episodes": args.eval_episodes,
+                    "history": [
+                        {"episode": int(e), "mean": float(m), "min": float(mi), "max": float(ma)}
+                        for e, m, mi, ma in greedy_eval_history
+                    ],
+                },
+                f,
+                indent=2,
+            )
+        print(f"Saved greedy evaluation curve to {os.path.join(run_dir, f'{args.method}_greedy_eval_curve.png')}")
+        print(f"Saved greedy evaluation history to {greedy_summary_path}")
     print(f"Saved trained model to {model_path}")
     print(f"Saved metadata to {meta_path}")
     print(f"Saved plot to {os.path.join(run_dir, f'{args.method}_learning_curve.png')}")
@@ -183,6 +231,7 @@ def parse_args():
     parser.add_argument("--lambda-value", type=float, default=0.9)
     parser.add_argument("--eval-interval", type=int, default=0, help="Run greedy evaluation every N episodes during training")
     parser.add_argument("--eval-episodes", type=int, default=5, help="Number of greedy evaluation episodes when eval_interval is enabled")
+    parser.add_argument("--load-model", type=str, default=None, help="Path to a pretrained model file to load before training")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--log-interval", type=int, default=10)
     parser.add_argument("--save-dir", type=str, default="saved_models")

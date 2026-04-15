@@ -208,10 +208,14 @@ class MazeEnv(gym.Env):
         info = {}
         return obs, info
 
+    def _manhattan_distance(self, pos_a: tuple[int, int], pos_b: tuple[int, int]) -> int:
+        return abs(pos_a[0] - pos_b[0]) + abs(pos_a[1] - pos_b[1])
+
     def step(self, action: int):
         self.step_count += 1
         next_pos = self._next_position(action)
         invalid_move = not self._is_free(next_pos)
+        old_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
         if not invalid_move:
             self.agent_pos = next_pos
 
@@ -220,9 +224,11 @@ class MazeEnv(gym.Env):
         if terminated:
             reward = 1.0
         elif invalid_move:
-            reward = -0.01
+            reward = -0.05
         else:
-            reward = 0.0
+            new_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
+            distance_delta = old_distance - new_distance
+            reward = -0.01 + 0.03 * distance_delta
 
         obs = self._get_observation()
         info = {}

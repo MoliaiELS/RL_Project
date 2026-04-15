@@ -1,0 +1,102 @@
+Final Project – Complete Official Notice &
+Integrated Guidelines​
+This document integrates all official announcements,
+updates, and clarifications for the RL final project. All
+requirements below are binding.​
+
+1. Team Formation (Mandatory)​
+• Team Size: Strictly 3 students per team (no exceptions, no 2-person teams approved).​
+• Registration Platform: Canvas → People → Student Groups​
+• Deadline: Extended to March 31st 23:59. ​
+Failure to complete team formation by this date will delay your project submission and
+presentation arrangement.​
+
+
+2. Final Project Track Selection (Choose ONE Only)​
+You may select Track A (Python Implementation) or Track B (Literature Survey) based on
+your strengths. Both tracks require a 10-page formal written report (main body only;
+references & appendices excluded).​
+
+Track A: Implementation Track (Hands-On Coding Focus)​
+Core Task: Apply a classic RL algorithm covered in lectures to a simulated/real-world
+scenario, with full code implementation and result analysis.​
+Mandatory Deliverables:​
+1. 10-page project report (follows the standard grading rubric)​
+2. Runnable, well-commented Python code + clear execution/reproduction instructions​
+Pre-Approved Topics (or propose similar RL-aligned topics, confirm with TA/instructor if
+needed):​
+• Game Playing with Q-Learning​
+• Traffic Signal Control with SARSA​
+• Robot Navigation in a Maze with TD(λ)​
+• Shortest Path Robot Delivery with Q-Learning​
+• Smart Home Energy Management with Q-Learning​
+• Taxi Dispatch Optimization with n-Step SARSA​
+• Healthcare Treatment Scheduling with n-Step SARSA​
+• Recommendation System with Multi-Armed Bandits​
+• Network Packet Routing with TD(λ)​
+• Adaptive Curriculum Learning with SARSA(λ)​
+
+Track B: Literature Survey Track (Research & Analysis Focus)​
+Core Task: In-depth critical survey of a narrow RL application domain (robotics, healthcare,
+finance, autonomous systems, NLP, etc.).​
+Mandatory Deliverables:​
+1. 10-page critical survey report (no code required)​
+2. Analysis of at least 5 high-quality papers (preferably 3–5 years old, from top RL/AI
+    conferences/journals; no blogs/unvetted sources)​
+Key Constraints:​
+ • Papers must address RL-formulated problems (algorithms not limited to lecture content,
+    but domain must be RL-aligned)​
+ • Report must explicitly include:​
+    a. Problem Formulation​
+    b. Key RL Methods​
+    c. Experimental Results & Comparisons​
+    d. Open Research Challenges​
+
+3. Report Format & Submission Rules​
+• Page Limit: 10 pages for the main body (references + appendices do NOT count)​
+• Citation: Any standard academic style (IEEE recommended)​
+• Appendices: Allowed for supplementary materials (e.g., detailed paper summaries)​
+• Structure: Abstract, Introduction, Conclusion are optional but recommended; the four core
+   sections for Track B (listed above) are mandatory.​
+
+4. Grading Criteria (Total: 60% of Course Grade)​
+Project Report (45%)​
+• Problem Definition & Literature Review: 20%​
+• Methodology: 30%​
+• Results & Analysis: 30%​
+• Clarity & Presentation: 20%​
+
+Project Pitch Presentation (15%)​
+• Clarity & Engagement: 30%​
+• Content & Technical Depth: 40%​
+• Q&A Handling: 20%​
+Detailed rubrics available on Canvas.​
+
+
+5. Presentation Arrangement​
+• Dates: Last two lectures — 24 April or 8 May​
+• Duration per team: 10 minutes total (7 min presentation + 3 min Q&A)​
+• Schedule Assignment:​
+Group numbers will be assigned in the lecture on 3 April, followed by random selection to
+determine presentation date (24 April / 8 May).​
+• Specific time slots: To be announced after team registration closes.​
+• Content: Track A → implementation details; Track B → survey findings.​
+
+
+
+
+6. Next Steps​
+1. Finalize 3-person team & register on Canvas by the end of today, March 31st​
+2. Select Track A / B with your team​
+3. Begin topic selection, literature review, or coding preparation​
+4. Confirm custom topics (if any) with TA/instructor​
+
+
+7. Contact & Reminders​
+For questions about team formation, track selection, topic approval, or submission rules:​
+• Email the TA / Instructor​
+• Ask during lecture or office hours​
+All requirements above are final. Please plan your project accordingly.​
+Best regards,​
+RL Course TA Team​
+
