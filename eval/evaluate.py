@@ -113,8 +113,8 @@ def load_td_agent(agent_type: str, state_size: int | None, n_actions: int, path:
             gamma=args.gamma,
             alpha=args.alpha,
             epsilon=0.0,
-            lambda_value=args.lambda_value,
             seed=args.seed,
+            device=args.device,
         )
     else:
         raise ValueError(f"Unsupported agent type: {agent_type}")
@@ -330,6 +330,12 @@ def parse_args():
         help="Disable Manhattan distance reward shaping for Maze environments.",
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Torch device to use for evaluation, such as cpu or cuda. Defaults to cuda if available.",
+    )
     return parser.parse_args()
 
 

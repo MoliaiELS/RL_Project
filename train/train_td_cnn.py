@@ -21,8 +21,8 @@ def build_agent(args, obs_shape: tuple[int, int, int], n_actions: int):
         gamma=args.gamma,
         alpha=args.alpha,
         epsilon=args.epsilon,
-        lambda_value=args.lambda_value,
         seed=args.seed,
+        device=args.device,
     )
 
 
@@ -247,6 +247,12 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--log-interval", type=int, default=10)
     parser.add_argument("--save-dir", type=str, default="saved_models")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Torch device to use for training, such as cpu or cuda. Defaults to cuda if available.",
+    )
     return parser.parse_args()
 
 
