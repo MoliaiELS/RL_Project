@@ -113,7 +113,6 @@ def load_td_agent(agent_type: str, state_size: int | None, n_actions: int, path:
             gamma=args.gamma,
             alpha=args.alpha,
             epsilon=0.0,
-            lambda_value=args.lambda_value,
             seed=args.seed,
             device=args.device,
         )

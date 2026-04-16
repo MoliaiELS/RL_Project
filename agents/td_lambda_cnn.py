@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
 from .base_agent import BaseAgent
 
 
@@ -25,7 +27,7 @@ class CNNQNetwork(nn.Module):
 
 
 class TDLambdaCNNAgent(BaseAgent):
-    """CNN-based semi-gradient TD(lambda) agent for raw maze observations."""
+    """CNN-based TD agent for raw maze observations."""
 
     def __init__(
         self,
@@ -34,21 +36,18 @@ class TDLambdaCNNAgent(BaseAgent):
         gamma: float = 0.99,
         alpha: float = 5e-4,
         epsilon: float = 0.1,
-        lambda_value: float = 0.9,
         seed: int | None = None,
         device: str | None = None,
     ):
         self.obs_shape = obs_shape
         state_size = int(np.prod(obs_shape))
         super().__init__(state_size, n_actions, gamma, alpha, epsilon, seed)
-        self.lambda_value = float(lambda_value)
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
         self.net = CNNQNetwork(obs_shape, n_actions).to(self.device)
-        self._trace_decay = self.gamma * self.lambda_value
-        self.eligibility_traces = [torch.zeros_like(param) for param in self.net.parameters()]
+        self.optimizer = optim.Adam(self.net.parameters(), lr=self.alpha)
 
     def _to_tensor(self, observation: np.ndarray) -> torch.Tensor:
         x = np.asarray(observation, dtype=np.float32)
@@ -72,8 +71,8 @@ class TDLambdaCNNAgent(BaseAgent):
         return self.argmax_action(self.q_values(state))
 
     def new_episode(self) -> None:
-        for trace in self.eligibility_traces:
-            trace.zero_()
+        # No eligibility trace state is maintained for the neural network.
+        return None
 
     def update(
         self,
@@ -94,17 +93,11 @@ class TDLambdaCNNAgent(BaseAgent):
             with torch.no_grad():
                 next_q_values = self.net(self._to_tensor(next_state))[0]
                 target = float(reward) + self.gamma * next_q_values[next_action]
-        td_error = target - current_q.detach()
 
-        self.net.zero_grad(set_to_none=True)
-        current_q.backward()
-
-        with torch.no_grad():
-            for param, trace in zip(self.net.parameters(), self.eligibility_traces):
-                if param.grad is None:
-                    continue
-                trace.mul_(self._trace_decay).add_(param.grad)
-                param.add_(self.alpha * td_error * trace)
+        loss = F.mse_loss(current_q, target)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
     def save(self, path: str) -> None:
         torch.save(self.net.state_dict(), path)

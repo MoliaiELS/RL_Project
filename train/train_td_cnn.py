@@ -21,7 +21,6 @@ def build_agent(args, obs_shape: tuple[int, int, int], n_actions: int):
         gamma=args.gamma,
         alpha=args.alpha,
         epsilon=args.epsilon,
-        lambda_value=args.lambda_value,
         seed=args.seed,
         device=args.device,
     )
