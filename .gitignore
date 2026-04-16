@@ -1,4 +1,22 @@
+# Editor settings
 .vscode/
+
+# Project outputs
 saved_models/
-**/__pycache__/
-*.pyc
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Coverage reports
+.coverage
+htmlcov/
