@@ -12,6 +12,8 @@ if ROOT_DIR not in sys.path:
 from envs.minigrid_env import make_env, MiniGridEncoder
 from agents.td_zero import TDZeroAgent
 from agents.td_lambda import TDLambdaAgent
+from agents.td_lambda_action_features import TDLambdaActionFeatureAgent
+from agents.td_lambda_cnn import TDLambdaCNNAgent
 
 
 def _serialize_args(args):
@@ -71,7 +73,7 @@ def save_evaluation_plot(rewards, model_path: str, env_id: str):
     return plot_path
 
 
-def load_td_agent(agent_type: str, state_size: int, n_actions: int, path: str, args):
+def load_td_agent(agent_type: str, state_size: int | None, n_actions: int, path: str, args):
     if agent_type == "td0":
         agent = TDZeroAgent(
             state_size=state_size,
@@ -84,6 +86,29 @@ def load_td_agent(agent_type: str, state_size: int, n_actions: int, path: str, a
     elif agent_type == "tdlambda":
         agent = TDLambdaAgent(
             state_size=state_size,
+            n_actions=n_actions,
+            gamma=args.gamma,
+            alpha=args.alpha,
+            epsilon=0.0,
+            lambda_value=args.lambda_value,
+            seed=args.seed,
+        )
+    elif agent_type == "tdlambda_actionfeatures":
+        agent = TDLambdaActionFeatureAgent(
+            n_actions=n_actions,
+            gamma=args.gamma,
+            alpha=args.alpha,
+            epsilon=0.0,
+            lambda_value=args.lambda_value,
+            patch_radius=args.patch_radius,
+            seed=args.seed,
+        )
+    elif agent_type == "tdlambda_cnn":
+        obs_shape = getattr(args, "obs_shape", None)
+        if obs_shape is None:
+            raise ValueError("obs_shape metadata is required to load tdlambda_cnn models.")
+        agent = TDLambdaCNNAgent(
+            obs_shape=tuple(obs_shape),
             n_actions=n_actions,
             gamma=args.gamma,
             alpha=args.alpha,
@@ -184,18 +209,38 @@ def evaluate(args):
                 f"Environment mismatch: model saved for {saved_env}, but --env-id is {args.env_id}. "
                 "Use the same env_id as the saved model or omit --env-id to infer it."
             )
+        if args.agent_type is None and metadata.get("method") in ["td0", "tdlambda", "tdlambda_actionfeatures", "tdlambda_cnn"]:
+            args.agent_type = metadata.get("method")
+        if metadata.get("obs_shape") is not None:
+            args.obs_shape = tuple(metadata["obs_shape"])
+
+    if args.agent_type is None:
+        raise ValueError(
+            "No agent type provided and no model metadata could infer it. "
+            "Please pass --agent-type or save the model with a 'method' field in metadata."
+        )
 
     if args.env_id is None:
         raise ValueError(
             "No env_id provided and no metadata found. Please pass --env-id to match the saved model."
         )
 
-    env = make_env(args.env_id, seed=args.seed)
-    encoder = MiniGridEncoder(env.observation_space)
-    if metadata and metadata.get("state_size") != encoder.size:
+    env = make_env(
+        args.env_id,
+        seed=args.seed,
+        use_manhattan_distance=args.use_manhattan_distance,
+    )
+    use_raw_observation = args.agent_type in {"tdlambda_actionfeatures", "tdlambda_cnn"}
+    encoder = None if use_raw_observation else MiniGridEncoder(env.observation_space)
+    if encoder is not None and metadata and metadata.get("state_size") != encoder.size:
         raise ValueError(
             f"Observation size mismatch: saved model expects state size {metadata.get('state_size')} "
             f"but env {args.env_id} produces state size {encoder.size}."
+        )
+    if use_raw_observation and metadata and "state_size" not in metadata:
+        print(
+            "Warning: saved model metadata does not contain state_size for tdlambda_actionfeatures. "
+            "Evaluation will continue, but future saved models should include state_size."
         )
     if metadata and metadata.get("n_actions") != env.action_space.n:
         raise ValueError(
@@ -203,21 +248,32 @@ def evaluate(args):
             f"but env {args.env_id} has {env.action_space.n}."
         )
 
-    agent = load_td_agent(args.agent_type, encoder.size, env.action_space.n, args.model_path, args)
+    agent = load_td_agent(
+        args.agent_type,
+        None if use_raw_observation else encoder.size,
+        env.action_space.n,
+        args.model_path,
+        args,
+    )
 
     results = []
     for episode in range(1, args.eval_episodes + 1):
         observation, _ = env.reset(seed=args.seed + episode)
-        state = encoder.encode(observation)
+        if not use_raw_observation:
+            state = encoder.encode(observation)
         terminated = False
         truncated = False
         total_reward = 0.0
         frames = []
 
         while not terminated and not truncated:
-            action = agent.greedy_action(state)
+            if use_raw_observation:
+                action = agent.greedy_action(observation)
+            else:
+                action = agent.greedy_action(state)
             observation, reward, terminated, truncated, _ = env.step(action)
-            state = encoder.encode(observation)
+            if not use_raw_observation:
+                state = encoder.encode(observation)
             total_reward += reward
             if args.render or args.save_replay:
                 frame = get_render_frame(env)
@@ -243,9 +299,15 @@ def evaluate(args):
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate a trained TD agent")
     parser.add_argument("--env-id", type=str, default=None, help="Environment ID to use for evaluation. If omitted, the saved model metadata will be used.")
-    parser.add_argument("--agent-type", type=str, default="tdlambda", choices=["td0", "tdlambda"])
+    parser.add_argument(
+        "--agent-type",
+        type=str,
+        default=None,
+        choices=["td0", "tdlambda", "tdlambda_actionfeatures", "tdlambda_cnn"],
+        help="Agent type to evaluate. If omitted, the evaluator will infer it from the saved model metadata.",
+    )
     parser.add_argument("--model-path", type=str, required=True)
-    parser.add_argument("--eval-episodes", type=int, default=20)
+    parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--render", action="store_true", help="Render the episode as an animation")
     parser.add_argument("--save-replay", action="store_true", help="Save replay frames to the model folder for later playback")
     parser.add_argument("--replay", action="store_true", help="Replay a saved animation from the model folder")
@@ -254,6 +316,19 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--alpha", type=float, default=1e-5)
     parser.add_argument("--lambda-value", type=float, default=0.8)
+    parser.add_argument(
+        "--patch-radius",
+        type=int,
+        default=1,
+        help="Radius of the local patch used by the action-conditional feature extractor.",
+    )
+    parser.add_argument(
+        "--no-manhattan-distance",
+        action="store_false",
+        dest="use_manhattan_distance",
+        default=True,
+        help="Disable Manhattan distance reward shaping for Maze environments.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 

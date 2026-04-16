@@ -32,6 +32,39 @@ REFERENCE_FINETUNE_CONFIG = {
     "eval_episodes": 5,
 }
 
+REFERENCE_RANDOM_STAGE_SCHEDULE = [
+    {
+        "alpha": 3e-4,
+        "gamma": 0.99,
+        "epsilon": 1.0,
+        "epsilon_decay": 0.9997,
+        "epsilon_min": 0.10,
+        "lambda_value": 0.80,
+        "eval_interval": 100,
+        "eval_episodes": 5,
+    },
+    {
+        "alpha": 2.5e-4,
+        "gamma": 0.99,
+        "epsilon": 0.6,
+        "epsilon_decay": 0.99985,
+        "epsilon_min": 0.05,
+        "lambda_value": 0.85,
+        "eval_interval": 100,
+        "eval_episodes": 5,
+    },
+    {
+        "alpha": 2e-4,
+        "gamma": 0.99,
+        "epsilon": 0.3,
+        "epsilon_decay": 0.9999,
+        "epsilon_min": 0.02,
+        "lambda_value": 0.90,
+        "eval_interval": 100,
+        "eval_episodes": 5,
+    },
+]
+
 
 def run_command(cmd, cwd):
     process = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
@@ -73,6 +106,21 @@ def split_episode_budget(total_episodes: int, num_stages: int) -> list[int]:
     remainder = total_episodes % num_stages
     allocation = [base + (1 if i < remainder else 0) for i in range(num_stages)]
     return [max(1, value) for value in allocation]
+
+
+def build_random_stage_schedule(stage_count: int, single_stage_override: dict | None = None) -> list[dict]:
+    if stage_count <= 0:
+        raise ValueError("random stage count must be positive")
+    if stage_count == 1 and single_stage_override is not None:
+        return [dict(single_stage_override)]
+    schedule = []
+    for i in range(stage_count):
+        if i < len(REFERENCE_RANDOM_STAGE_SCHEDULE):
+            template = REFERENCE_RANDOM_STAGE_SCHEDULE[i]
+        else:
+            template = REFERENCE_RANDOM_STAGE_SCHEDULE[-1]
+        schedule.append(dict(template))
+    return schedule
 
 
 def find_saved_model_path(base_dir: str, env_id: str, method: str = "tdlambda") -> str | None:
@@ -185,7 +233,18 @@ def main():
         default=None,
         help="Comma-separated fixed-maze seeds. Defaults to seed, seed+1, seed+2, seed+3.",
     )
-    parser.add_argument("--finetune-episodes", type=int, default=5000)
+    parser.add_argument(
+        "--finetune-episodes",
+        type=int,
+        default=9000,
+        help="Total random-maze fine-tuning budget, split across random stages.",
+    )
+    parser.add_argument(
+        "--random-stage-count",
+        type=int,
+        default=3,
+        help="How many random-maze fine-tuning stages to run with exploration reheating.",
+    )
     parser.add_argument("--alpha", type=float, default=REFERENCE_PRETRAIN_CONFIG["alpha"])
     parser.add_argument("--gamma", type=float, default=REFERENCE_PRETRAIN_CONFIG["gamma"])
     parser.add_argument("--epsilon", type=float, default=REFERENCE_PRETRAIN_CONFIG["epsilon"])
@@ -215,7 +274,8 @@ def main():
         "random_env": args.random_env,
         "base_seed": args.seed,
         "pretrain_total_episodes": args.pretrain_episodes,
-        "finetune_episodes": args.finetune_episodes,
+        "finetune_total_episodes": args.finetune_episodes,
+        "random_stage_count": args.random_stage_count,
         "stages": [],
     }
 
@@ -275,29 +335,60 @@ def main():
             }
         )
 
-    random_run_dir = os.path.join(
+    random_root_dir = os.path.join(
         args.save_dir,
         f"finetune-{args.random_env}-{args.finetune_episodes}-{args.seed}",
     )
-    finetune_summary = run_training_stage(
-        stage_name="random-finetune",
-        env_id=args.random_env,
-        save_dir=random_run_dir,
-        num_episodes=args.finetune_episodes,
-        seed=args.seed,
-        model_path=fixed_model_path,
-        alpha=args.finetune_alpha,
-        gamma=args.finetune_gamma,
-        epsilon=args.finetune_epsilon,
-        epsilon_decay=args.finetune_epsilon_decay,
-        epsilon_min=args.finetune_epsilon_min,
-        lambda_value=args.finetune_lambda_value,
-        eval_interval=args.finetune_eval_interval,
-        eval_episodes=args.finetune_eval_episodes,
-    )
-    curriculum_summary["stages"].append(finetune_summary)
+    os.makedirs(random_root_dir, exist_ok=True)
 
-    summary_path = os.path.join(random_run_dir, "curriculum_summary.json")
+    single_stage_override = {
+        "alpha": args.finetune_alpha,
+        "gamma": args.finetune_gamma,
+        "epsilon": args.finetune_epsilon,
+        "epsilon_decay": args.finetune_epsilon_decay,
+        "epsilon_min": args.finetune_epsilon_min,
+        "lambda_value": args.finetune_lambda_value,
+        "eval_interval": args.finetune_eval_interval,
+        "eval_episodes": args.finetune_eval_episodes,
+    }
+    random_stage_schedule = build_random_stage_schedule(
+        args.random_stage_count,
+        single_stage_override=single_stage_override,
+    )
+    random_stage_episode_allocation = split_episode_budget(
+        args.finetune_episodes,
+        len(random_stage_schedule),
+    )
+
+    current_model_path = fixed_model_path
+    for stage_index, (stage_cfg, stage_episodes) in enumerate(
+        zip(random_stage_schedule, random_stage_episode_allocation),
+        start=1,
+    ):
+        stage_save_dir = os.path.join(
+            random_root_dir,
+            f"stage{stage_index:02d}",
+        )
+        finetune_summary = run_training_stage(
+            stage_name=f"random-finetune-stage-{stage_index}",
+            env_id=args.random_env,
+            save_dir=stage_save_dir,
+            num_episodes=stage_episodes,
+            seed=args.seed + stage_index - 1,
+            model_path=current_model_path,
+            alpha=stage_cfg["alpha"],
+            gamma=stage_cfg["gamma"],
+            epsilon=stage_cfg["epsilon"],
+            epsilon_decay=stage_cfg["epsilon_decay"],
+            epsilon_min=stage_cfg["epsilon_min"],
+            lambda_value=stage_cfg["lambda_value"],
+            eval_interval=stage_cfg["eval_interval"],
+            eval_episodes=stage_cfg["eval_episodes"],
+        )
+        curriculum_summary["stages"].append(finetune_summary)
+        current_model_path = finetune_summary["trained_model_path"]
+
+    summary_path = os.path.join(random_root_dir, "curriculum_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(curriculum_summary, f, indent=2)
 

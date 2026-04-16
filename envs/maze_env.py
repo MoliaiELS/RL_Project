@@ -141,9 +141,11 @@ class MazeEnv(gym.Env):
         max_steps: int = 200,
         seed: int | None = None,
         render_mode: str | None = None,
+        use_manhattan_distance: bool = True,
     ):
         self.layout_id = layout_id
         self.auto_size = parse_auto_maze_id(layout_id)
+        self.use_manhattan_distance = bool(use_manhattan_distance)
         self.auto_generate = self.auto_size is not None
 
         if self.auto_generate:
@@ -215,7 +217,8 @@ class MazeEnv(gym.Env):
         self.step_count += 1
         next_pos = self._next_position(action)
         invalid_move = not self._is_free(next_pos)
-        old_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
+        if self.use_manhattan_distance:
+            old_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
         if not invalid_move:
             self.agent_pos = next_pos
 
@@ -226,9 +229,12 @@ class MazeEnv(gym.Env):
         elif invalid_move:
             reward = -0.05
         else:
-            new_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
-            distance_delta = old_distance - new_distance
-            reward = -0.01 + 0.03 * distance_delta
+            if self.use_manhattan_distance:
+                new_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
+                distance_delta = old_distance - new_distance
+                reward = -0.01 + 0.03 * distance_delta
+            else:
+                reward = -0.01
 
         obs = self._get_observation()
         info = {}
@@ -315,8 +321,8 @@ class MazeEnv(gym.Env):
         return None
 
 
-def make_maze_env(env_id: str = "Maze-Easy", seed: int | None = None) -> MazeEnv:
-    return MazeEnv(layout_id=env_id, seed=seed)
+def make_maze_env(env_id: str = "Maze-Easy", seed: int | None = None, use_manhattan_distance: bool = True) -> MazeEnv:
+    return MazeEnv(layout_id=env_id, seed=seed, use_manhattan_distance=use_manhattan_distance)
 
 
 __all__ = ["MazeEnv", "make_maze_env"]

@@ -28,9 +28,9 @@ def make_minigrid_env(env_id: str = "MiniGrid-Empty-8x8-v0", seed: int | None = 
     return env
 
 
-def make_env(env_id: str = "MiniGrid-Empty-8x8-v0", seed: int | None = None):
+def make_env(env_id: str = "MiniGrid-Empty-8x8-v0", seed: int | None = None, use_manhattan_distance: bool = True):
     if env_id.startswith("Maze-"):
-        return make_maze_env(env_id, seed=seed)
+        return make_maze_env(env_id, seed=seed, use_manhattan_distance=use_manhattan_distance)
     return make_minigrid_env(env_id, seed=seed)
 
 
