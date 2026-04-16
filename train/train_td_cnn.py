@@ -204,7 +204,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train a CNN-based TD(lambda) agent on raw maze observations")
     parser.add_argument("--env-id", type=str, default="Maze-Easy")
     parser.add_argument("--num-episodes", type=int, default=250)
-    parser.add_argument("--alpha", type=float, default=5e-4)
+    parser.add_argument("--alpha", type=float, default=1e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument(
         "--epsilon",
@@ -224,7 +224,7 @@ def parse_args():
         default=0.995,
         help="Multiplicative epsilon decay per episode",
     )
-    parser.add_argument("--lambda-value", type=float, default=0.9)
+    parser.add_argument("--lambda-value", type=float, default=0.8)
     parser.add_argument(
         "--eval-interval",
         type=int,

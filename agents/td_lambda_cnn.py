@@ -10,14 +10,14 @@ class CNNQNetwork(nn.Module):
         channels = obs_shape[2]
         height, width = obs_shape[0], obs_shape[1]
         self.net = nn.Sequential(
-            nn.Conv2d(channels, 32, kernel_size=3, padding=1),
+            nn.Conv2d(channels, 16, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.Flatten(),
-            nn.Linear(64 * height * width, 256),
+            nn.Linear(32 * ((height + 1) // 2) * ((width + 1) // 2), 128),
             nn.ReLU(inplace=True),
-            nn.Linear(256, n_actions),
+            nn.Linear(128, n_actions),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
