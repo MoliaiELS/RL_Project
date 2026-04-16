@@ -179,6 +179,11 @@ def run_training(args):
     with open(meta_path, "w", encoding="utf-8") as meta_file:
         json.dump(metadata, meta_file, indent=2)
 
+    # Save episode rewards array
+    reward_path = os.path.join(run_dir, "episode_rewards.npy")
+    np.save(reward_path, np.array(history))
+    print(f"Episode rewards saved to {reward_path}")
+
     plot_learning_curve(
         history,
         title=f"{args.method.upper()} on {args.env_id}",
