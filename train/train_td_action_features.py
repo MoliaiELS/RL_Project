@@ -204,7 +204,7 @@ def parse_args():
     )
     parser.add_argument("--env-id", type=str, default="Maze-Easy")
     parser.add_argument("--num-episodes", type=int, default=250)
-    parser.add_argument("--alpha", type=float, default=5e-4)
+    parser.add_argument("--alpha", type=float, default=1e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument(
         "--epsilon",
@@ -215,20 +215,20 @@ def parse_args():
     parser.add_argument(
         "--epsilon-min",
         type=float,
-        default=0.05,
+        default=0.1,
         help="Minimum epsilon after decay",
     )
     parser.add_argument(
         "--epsilon-decay",
         type=float,
-        default=0.995,
+        default=0.999,
         help="Multiplicative epsilon decay per episode",
     )
-    parser.add_argument("--lambda-value", type=float, default=0.9)
+    parser.add_argument("--lambda-value", type=float, default=0.8)
     parser.add_argument(
         "--patch-radius",
         type=int,
-        default=1,
+        default=2,
         help="Radius of the local patch used by the action-conditional feature extractor",
     )
     parser.add_argument(

@@ -94,13 +94,16 @@ def load_td_agent(agent_type: str, state_size: int | None, n_actions: int, path:
             seed=args.seed,
         )
     elif agent_type == "tdlambda_actionfeatures":
+        patch_radius = getattr(args, "patch_radius", None)
+        if getattr(args, "model_metadata", None) and args.model_metadata.get("patch_radius") is not None:
+            patch_radius = int(args.model_metadata["patch_radius"])
         agent = TDLambdaActionFeatureAgent(
             n_actions=n_actions,
             gamma=args.gamma,
             alpha=args.alpha,
             epsilon=0.0,
             lambda_value=args.lambda_value,
-            patch_radius=args.patch_radius,
+            patch_radius=patch_radius,
             seed=args.seed,
         )
     elif agent_type == "tdlambda_cnn":
@@ -201,6 +204,7 @@ def evaluate(args):
 
     metadata = load_model_metadata(args.model_path)
     if metadata:
+        args.model_metadata = metadata
         saved_env = metadata.get("env_id")
         if args.env_id is None:
             args.env_id = saved_env

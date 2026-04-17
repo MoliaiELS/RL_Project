@@ -16,9 +16,10 @@ class ActionConditionalFeatureExtractor:
 
     @property
     def feature_size(self) -> int:
-        # bias + invalid + goal + distance_delta + neighbor_ratio + dead_end
+        # bias + invalid + goal + current_distance + distance_delta
+        # + neighbor_ratio + dead_end + corridor + same_line
         # + wall patch + goal patch
-        return 6 + 2 * (self.patch_size ** 2)
+        return 9 + 2 * (self.patch_size ** 2)
 
     def extract(self, observation: np.ndarray, action: int) -> np.ndarray:
         obs = np.asarray(observation, dtype=np.float32)
@@ -42,18 +43,35 @@ class ActionConditionalFeatureExtractor:
             if invalid_move
             else self._manhattan_distance(next_pos, goal_pos)
         )
-        distance_delta = float(current_distance - next_distance)
+        max_distance = float(wall_channel.shape[0] + wall_channel.shape[1] - 2)
+        current_distance_norm = float(current_distance) / max_distance
+        distance_delta = float(current_distance - next_distance) / max_distance
         next_is_goal = float(next_pos == goal_pos and not invalid_move)
         neighbor_free_count = self._count_free_neighbors(wall_channel, next_pos)
         neighbor_ratio = float(neighbor_free_count / 4.0)
         is_dead_end = float(neighbor_free_count <= 1 and next_pos != goal_pos)
+        is_corridor = float(self._is_corridor(wall_channel, next_pos))
+        same_line = float(next_pos[0] == goal_pos[0] or next_pos[1] == goal_pos[1])
 
         wall_patch = self._extract_patch(wall_channel, next_pos).flatten()
         goal_patch = self._extract_patch(goal_channel, next_pos).flatten()
 
         features = np.concatenate(
             [
-                np.array([1.0, invalid_move, next_is_goal, distance_delta, neighbor_ratio, is_dead_end], dtype=np.float32),
+                np.array(
+                    [
+                        1.0,
+                        invalid_move,
+                        next_is_goal,
+                        current_distance_norm,
+                        distance_delta,
+                        neighbor_ratio,
+                        is_dead_end,
+                        is_corridor,
+                        same_line,
+                    ],
+                    dtype=np.float32,
+                ),
                 wall_patch.astype(np.float32),
                 goal_patch.astype(np.float32),
             ]
@@ -98,6 +116,18 @@ class ActionConditionalFeatureExtractor:
             if self._is_free(wall_plane, neighbor):
                 count += 1
         return count
+
+    def _is_corridor(self, wall_plane: np.ndarray, pos: tuple[int, int]) -> bool:
+        free_dirs = []
+        for action, neighbor in enumerate([
+            (pos[0] - 1, pos[1]),
+            (pos[0], pos[1] + 1),
+            (pos[0] + 1, pos[1]),
+            (pos[0], pos[1] - 1),
+        ]):
+            if self._is_free(wall_plane, neighbor):
+                free_dirs.append(action)
+        return len(free_dirs) == 2 and abs(free_dirs[0] - free_dirs[1]) == 2
 
     def _extract_patch(self, plane: np.ndarray, center: tuple[int, int]) -> np.ndarray:
         patch = np.ones((self.patch_size, self.patch_size), dtype=np.float32)
@@ -162,7 +192,7 @@ class TDLambdaActionFeatureAgent(BaseAgent):
         td_error = target - current_q
         features = self.feature_extractor.extract(state, action)
         self.eligibility *= self.gamma * self.lambda_value
-        self.eligibility[action] += features
+        self.eligibility[action] = features
         self.weights += self.alpha * td_error * self.eligibility
 
     def save(self, path: str) -> None:
