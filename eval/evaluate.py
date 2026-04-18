@@ -14,6 +14,7 @@ from agents.td_zero import TDZeroAgent
 from agents.td_lambda import TDLambdaAgent
 from agents.td_lambda_action_features import TDLambdaActionFeatureAgent
 from agents.td_lambda_cnn import TDLambdaCNNAgent
+from agents.td_lambda_graph import TDLambdaGraphAgent
 
 
 def _serialize_args(args):
@@ -119,6 +120,26 @@ def load_td_agent(agent_type: str, state_size: int | None, n_actions: int, path:
             seed=args.seed,
             device=args.device,
         )
+    elif agent_type == "tdlambda_graph":
+        hidden_dim = getattr(args, "hidden_dim", None)
+        num_layers = getattr(args, "num_layers", None)
+        dropout = getattr(args, "dropout", None)
+        if getattr(args, "model_metadata", None):
+            hidden_dim = args.model_metadata.get("hidden_dim", hidden_dim)
+            num_layers = args.model_metadata.get("num_layers", num_layers)
+            dropout = args.model_metadata.get("dropout", dropout)
+        agent = TDLambdaGraphAgent(
+            n_actions=n_actions,
+            gamma=args.gamma,
+            alpha=args.alpha,
+            epsilon=0.0,
+            lambda_value=args.lambda_value,
+            hidden_dim=hidden_dim or 64,
+            num_layers=num_layers or 2,
+            dropout=dropout or 0.0,
+            seed=args.seed,
+            device=args.device,
+        )
     else:
         raise ValueError(f"Unsupported agent type: {agent_type}")
     agent.load(path)
@@ -213,7 +234,7 @@ def evaluate(args):
                 f"Environment mismatch: model saved for {saved_env}, but --env-id is {args.env_id}. "
                 "Use the same env_id as the saved model or omit --env-id to infer it."
             )
-        if args.agent_type is None and metadata.get("method") in ["td0", "tdlambda", "tdlambda_actionfeatures", "tdlambda_cnn"]:
+        if args.agent_type is None and metadata.get("method") in ["td0", "tdlambda", "tdlambda_actionfeatures", "tdlambda_cnn", "tdlambda_graph"]:
             args.agent_type = metadata.get("method")
         if metadata.get("obs_shape") is not None:
             args.obs_shape = tuple(metadata["obs_shape"])
@@ -234,7 +255,7 @@ def evaluate(args):
         seed=args.seed,
         use_manhattan_distance=args.use_manhattan_distance,
     )
-    use_raw_observation = args.agent_type in {"tdlambda_actionfeatures", "tdlambda_cnn"}
+    use_raw_observation = args.agent_type in {"tdlambda_actionfeatures", "tdlambda_cnn", "tdlambda_graph"}
     encoder = None if use_raw_observation else MiniGridEncoder(env.observation_space)
     if encoder is not None and metadata and metadata.get("state_size") != encoder.size:
         raise ValueError(
@@ -307,7 +328,7 @@ def parse_args():
         "--agent-type",
         type=str,
         default=None,
-        choices=["td0", "tdlambda", "tdlambda_actionfeatures", "tdlambda_cnn"],
+        choices=["td0", "tdlambda", "tdlambda_actionfeatures", "tdlambda_cnn", "tdlambda_graph"],
         help="Agent type to evaluate. If omitted, the evaluator will infer it from the saved model metadata.",
     )
     parser.add_argument("--model-path", type=str, required=True)
@@ -325,6 +346,24 @@ def parse_args():
         type=int,
         default=1,
         help="Radius of the local patch used by the action-conditional feature extractor.",
+    )
+    parser.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=64,
+        help="Hidden dimension for graph encoder layers.",
+    )
+    parser.add_argument(
+        "--num-layers",
+        type=int,
+        default=2,
+        help="Number of graph encoder layers.",
+    )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.0,
+        help="Dropout rate for graph encoder layers.",
     )
     parser.add_argument(
         "--no-manhattan-distance",
