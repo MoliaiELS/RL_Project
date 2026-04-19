@@ -182,6 +182,10 @@ def run_training(args):
             "epsilon": agent.epsilon,
         })
 
+        # Epsilon decay
+        if args.epsilon_decay < 1.0:
+            agent.epsilon = max(args.epsilon_min, agent.epsilon * args.epsilon_decay)
+
         if episode % args.log_interval == 0:
             recent_rewards = [h["total_reward"] for h in history[-args.log_interval:]]
             print(f"Episode {episode:4d} | Avg Reward: {np.mean(recent_rewards):6.2f} | "
@@ -214,6 +218,8 @@ def main():
     parser.add_argument("--alpha", type=float, default=5e-4, help="Learning rate")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
     parser.add_argument("--epsilon", type=float, default=1.0, help="Initial epsilon for epsilon-greedy")
+    parser.add_argument("--epsilon-min", type=float, default=0.08, help="Minimum epsilon value")
+    parser.add_argument("--epsilon-decay", type=float, default=0.9995, help="Epsilon decay factor per episode")
     parser.add_argument("--lambda-value", type=float, default=0.9, help="TD(lambda) lambda parameter")
     parser.add_argument("--hidden-dim", type=int, default=64, help="Hidden dimension for graph encoder")
     parser.add_argument("--num-layers", type=int, default=2, help="Number of graph encoder layers")
@@ -283,6 +289,8 @@ def main():
         "alpha": args.alpha,
         "gamma": args.gamma,
         "epsilon": args.epsilon,
+        "epsilon_min": args.epsilon_min,
+        "epsilon_decay": args.epsilon_decay,
         "lambda_value": args.lambda_value,
         "hidden_dim": args.hidden_dim,
         "num_layers": args.num_layers,
