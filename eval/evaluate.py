@@ -15,6 +15,7 @@ from agents.td_lambda import TDLambdaAgent
 from agents.td_lambda_action_features import TDLambdaActionFeatureAgent
 from agents.td_lambda_cnn import TDLambdaCNNAgent
 from agents.td_lambda_graph import TDLambdaGraphAgent
+from agents.td_lambda_graph_gpu import TDLambdaGraphAgentGPU
 
 
 def _serialize_args(args):
@@ -129,6 +130,26 @@ def load_td_agent(agent_type: str, state_size: int | None, n_actions: int, path:
             num_layers = args.model_metadata.get("num_layers", num_layers)
             dropout = args.model_metadata.get("dropout", dropout)
         agent = TDLambdaGraphAgent(
+            n_actions=n_actions,
+            gamma=args.gamma,
+            alpha=args.alpha,
+            epsilon=0.0,
+            lambda_value=args.lambda_value,
+            hidden_dim=hidden_dim or 64,
+            num_layers=num_layers or 2,
+            dropout=dropout or 0.0,
+            seed=args.seed,
+            device=args.device,
+        )
+    elif agent_type == "tdlambda_graph_gpu":
+        hidden_dim = getattr(args, "hidden_dim", None)
+        num_layers = getattr(args, "num_layers", None)
+        dropout = getattr(args, "dropout", None)
+        if getattr(args, "model_metadata", None):
+            hidden_dim = args.model_metadata.get("hidden_dim", hidden_dim)
+            num_layers = args.model_metadata.get("num_layers", num_layers)
+            dropout = args.model_metadata.get("dropout", dropout)
+        agent = TDLambdaGraphAgentGPU(
             n_actions=n_actions,
             gamma=args.gamma,
             alpha=args.alpha,
