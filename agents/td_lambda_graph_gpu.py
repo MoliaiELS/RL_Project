@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.sparse import SparseTensor
+from torch import sparse
 from .base_agent import BaseAgent
 
 DIRECTIONS = [(-1, 0), (0, 1), (1, 0), (0, -1)]
@@ -21,11 +21,14 @@ class GraphEncoderGPU(nn.Module):
         self.activation = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
-    def forward(self, node_features: torch.Tensor, adjacency: SparseTensor) -> torch.Tensor:
+    def forward(self, node_features: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
         h = self.node_proj(node_features)
         for layer in self.layers:
-            # Use sparse matrix multiplication for efficiency
-            neighbor_messages = torch.sparse.mm(adjacency, h)
+            # Handle both sparse and dense adjacency matrices
+            if adjacency.is_sparse:
+                neighbor_messages = torch.sparse.mm(adjacency, h)
+            else:
+                neighbor_messages = adjacency @ h
             h = torch.cat([h, neighbor_messages], dim=-1)
             h = layer(h)
             h = self.activation(h)
@@ -123,19 +126,31 @@ class GraphEncoderGPU(nn.Module):
         if adj_indices:
             all_indices = torch.cat(adj_indices, dim=1)
             all_values = torch.cat(adj_values)
-            adjacency = SparseTensor(
-                row=all_indices[0],
-                col=all_indices[1],
-                value=all_values,
-                sparse_sizes=(node_count, node_count)
-            )
+            # Try to create sparse tensor, fallback to dense if not available
+            try:
+                adjacency = torch.sparse_coo_tensor(
+                    all_indices,
+                    all_values,
+                    (node_count, node_count),
+                    dtype=torch.float32,
+                    device=device
+                )
+            except (AttributeError, TypeError):
+                # Fallback for older PyTorch versions
+                adjacency = torch.zeros((node_count, node_count), dtype=torch.float32, device=device)
+                adjacency[all_indices[0], all_indices[1]] = all_values
         else:
-            adjacency = SparseTensor(
-                row=torch.empty(0, dtype=torch.long, device=device),
-                col=torch.empty(0, dtype=torch.long, device=device),
-                value=torch.empty(0, device=device),
-                sparse_sizes=(node_count, node_count)
-            )
+            try:
+                adjacency = torch.sparse_coo_tensor(
+                    torch.empty(2, 0, dtype=torch.long, device=device),
+                    torch.empty(0, device=device),
+                    (node_count, node_count),
+                    dtype=torch.float32,
+                    device=device
+                )
+            except (AttributeError, TypeError):
+                # Fallback for older PyTorch versions
+                adjacency = torch.zeros((node_count, node_count), dtype=torch.float32, device=device)
 
         # Find agent and goal indices
         agent_positions = torch.nonzero(agent_plane, as_tuple=False)
@@ -221,7 +236,7 @@ class TDLambdaGraphAgentGPU(BaseAgent):
     def _compute_q_values(
         self,
         node_features: torch.Tensor,
-        adjacency: SparseTensor,
+        adjacency: torch.Tensor,
         node_positions: torch.Tensor,
         agent_index: int,
         index_map: torch.Tensor,
