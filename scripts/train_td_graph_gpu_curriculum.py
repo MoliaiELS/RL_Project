@@ -45,7 +45,11 @@ def build_cmd(args, stage_config, previous_model_path: str | None):
     cmd += ["--gamma", str(args.gamma)]
     cmd += ["--epsilon", str(args.epsilon)]
     cmd += ["--epsilon-min", str(args.epsilon_min)]
-    cmd += ["--epsilon-decay", str(args.epsilon_decay)]
+    # Use more stable epsilon decay for curriculum training
+    if args.stable_transition:
+        cmd += ["--epsilon-decay", "0.9998"]  # Slower decay
+    else:
+        cmd += ["--epsilon-decay", str(args.epsilon_decay)]
     cmd += ["--lambda-value", str(args.lambda_value)]
     cmd += ["--hidden-dim", str(args.hidden_dim)]
     cmd += ["--num-layers", str(args.num_layers)]
@@ -60,6 +64,8 @@ def build_cmd(args, stage_config, previous_model_path: str | None):
     cmd += ["--run-dir", stage_dir]
     if args.device:
         cmd += ["--device", args.device]
+    if stage_config.get("epsilon") is not None:
+        cmd += ["--epsilon", str(stage_config["epsilon"])]
     if previous_model_path is not None:
         cmd += ["--load-model", previous_model_path]
     cmd += ["--seed", str(args.seed)]
@@ -76,12 +82,18 @@ def main():
     parser.add_argument("--epsilon", type=float, default=1.0)
     parser.add_argument("--epsilon-min", type=float, default=0.08)
     parser.add_argument("--epsilon-decay", type=float, default=0.9995)
+    parser.add_argument(
+        "--stage-epsilons",
+        type=lambda v: [float(item.strip()) for item in v.split(",") if item.strip()],
+        default=[1.0, 0.8, 0.6, 0.4, 0.2, 0.1],
+        help="Comma-separated starting epsilon values for each curriculum stage.",
+    )
     parser.add_argument("--lambda-value", type=float, default=0.9)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.0)
     parser.add_argument("--eval-interval", type=int, default=100)
-    parser.add_argument("--eval-episodes", type=int, default=5)
+    parser.add_argument("--eval-episodes", type=int, default=10)
     parser.add_argument("--log-interval", type=int, default=50)
     parser.add_argument("--device", type=str, default="cuda", help="Device for GPU acceleration (default: cuda)")
     parser.add_argument(
@@ -94,20 +106,26 @@ def main():
     parser.add_argument(
         "--stage-episodes",
         type=lambda v: [int(item.strip()) for item in v.split(",") if item.strip()],
-        default=[400, 300, 300, 300, 500],
+        default=[800, 1000, 1500, 2000, 1500, 2000],
         help="Comma-separated number of episodes for each stage in the curriculum.",
     )
     parser.add_argument(
         "--stage-random-ratios",
         type=lambda v: [float(item.strip()) for item in v.split(",") if item.strip()],
-        default=[0.2, 0.5, 0.8],
-        help="Comma-separated random-maze ratios for stage 2, 3 and 4.",
+        default=[0.05, 0.15, 0.3],
+        help="Comma-separated random-maze ratios for stage 3, 4 and 5.",
     )
     parser.add_argument(
         "--pretrain-seeds",
         type=int,
         default=3,
         help="Number of fixed random seeds to use during the first pretraining stage.",
+    )
+    parser.add_argument(
+        "--stable-transition",
+        action="store_true",
+        default=True,
+        help="Use stable transition mode: slower epsilon decay and learning rate adjustment.",
     )
     args = parser.parse_args()
 
@@ -119,10 +137,12 @@ def main():
     p_3maze_seeds = [args.seed + i for i in range(args.pretrain_seeds)]
     p_rand = ["Maze-Auto-Random-9x9"]
 
-    if len(args.stage_episodes) != 5:
-        raise ValueError("--stage-episodes must contain exactly 5 values")
+    if len(args.stage_episodes) != 6:
+        raise ValueError("--stage-episodes must contain exactly 6 values")
     if len(args.stage_random_ratios) != 3:
-        raise ValueError("--stage-random-ratios must contain exactly 3 values for stages 2,3,4")
+        raise ValueError("--stage-random-ratios must contain exactly 3 values for stages 3,4,5")
+    if len(args.stage_epsilons) != 6:
+        raise ValueError("--stage-epsilons must contain exactly 6 values")
 
     stage_configs = [
         {
@@ -132,38 +152,52 @@ def main():
             "fixed_seeds": p_3maze_seeds,
             "seed_probs": [1.0] * len(p_3maze_seeds),
             "num_episodes": args.stage_episodes[0],
+            "epsilon": args.stage_epsilons[0],
         },
         {
-            "save_name": "stage_02_mix_random",
+            "save_name": "stage_02_fixed_difficulty",
+            "env_ids": ["Maze-Easy", "Maze-Medium", "Maze-Hard"],
+            "env_probs": [1.0/3.0] * 3,
+            "fixed_seeds": None,
+            "seed_probs": None,
+            "num_episodes": args.stage_episodes[1],
+            "epsilon": args.stage_epsilons[1],
+        },
+        {
+            "save_name": "stage_03_mix_random_low",
             "env_ids": ["Maze-Easy", "Maze-Medium", "Maze-Hard", "Maze-Auto-Random-9x9"],
             "env_probs": [((1.0 - args.stage_random_ratios[0]) / 3)] * 3 + [args.stage_random_ratios[0]],
             "fixed_seeds": None,
             "seed_probs": None,
-            "num_episodes": args.stage_episodes[1],
+            "num_episodes": args.stage_episodes[2],
+            "epsilon": args.stage_epsilons[2],
         },
         {
-            "save_name": "stage_03_mix_random",
+            "save_name": "stage_04_mix_random_med",
             "env_ids": ["Maze-Easy", "Maze-Medium", "Maze-Hard", "Maze-Auto-Random-9x9"],
             "env_probs": [((1.0 - args.stage_random_ratios[1]) / 3)] * 3 + [args.stage_random_ratios[1]],
             "fixed_seeds": None,
             "seed_probs": None,
-            "num_episodes": args.stage_episodes[2],
+            "num_episodes": args.stage_episodes[3],
+            "epsilon": args.stage_epsilons[3],
         },
         {
-            "save_name": "stage_04_mix_random",
+            "save_name": "stage_05_mix_random_high",
             "env_ids": ["Maze-Easy", "Maze-Medium", "Maze-Hard", "Maze-Auto-Random-9x9"],
             "env_probs": [((1.0 - args.stage_random_ratios[2]) / 3)] * 3 + [args.stage_random_ratios[2]],
             "fixed_seeds": None,
             "seed_probs": None,
-            "num_episodes": args.stage_episodes[3],
+            "num_episodes": args.stage_episodes[4],
+            "epsilon": args.stage_epsilons[4],
         },
         {
-            "save_name": "stage_05_full_random",
+            "save_name": "stage_06_full_random",
             "env_ids": ["Maze-Auto-Random-9x9"],
             "env_probs": [1.0],
             "fixed_seeds": None,
             "seed_probs": None,
-            "num_episodes": args.stage_episodes[4],
+            "num_episodes": args.stage_episodes[5],
+            "epsilon": args.stage_epsilons[5],
         },
     ]
 

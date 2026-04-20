@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to avoid blocking
 import matplotlib.pyplot as plt
 
 
@@ -9,6 +11,7 @@ def plot_learning_curve(
     secondary_rewards: list[float] | None = None,
     secondary_x: list[int] | None = None,
     secondary_label: str = "Greedy eval",
+    show: bool = False,
 ) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ax.plot(rewards, label="Episode reward", alpha=0.4)
@@ -29,7 +32,9 @@ def plot_learning_curve(
     ax.grid(True, linestyle="--", alpha=0.5)
     if save_path:
         fig.savefig(save_path, bbox_inches="tight")
-    plt.show()
+    if show:
+        plt.show()
+    plt.close(fig)  # Always close the figure to free memory
 
 
 __all__ = ["plot_learning_curve"]

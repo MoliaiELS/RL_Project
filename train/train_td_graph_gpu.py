@@ -312,7 +312,25 @@ def main():
     print(f"Saved metadata to {metadata_path}")
 
     # Plot learning curve
-    plot_learning_curve(history, greedy_eval_history, save_path=os.path.join(args.run_dir, "learning_curve.png"))
+    training_rewards = [h["total_reward"] for h in history]
+    plot_learning_curve(
+        training_rewards,
+        title=f"GPU-accelerated Graph Agent Training",
+        save_path=os.path.join(args.run_dir, "learning_curve.png"),
+    )
+    
+    # Plot with evaluation data if available
+    if greedy_eval_history:
+        eval_episode_ids = [entry["episode"] for entry in greedy_eval_history]
+        eval_means = [entry["avg_reward"] for entry in greedy_eval_history]
+        plot_learning_curve(
+            training_rewards,
+            title=f"GPU-accelerated Graph Agent: Training & Evaluation",
+            save_path=os.path.join(args.run_dir, "learning_curve_with_eval.png"),
+            secondary_rewards=eval_means,
+            secondary_x=eval_episode_ids,
+            secondary_label="Greedy eval mean",
+        )
 
     print("\nTraining completed successfully!")
 
