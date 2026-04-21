@@ -34,7 +34,17 @@ class BaseAgent(ABC):
     ) -> None:
         raise NotImplementedError
 
-    def argmax_action(self, q_values: np.ndarray) -> int:
+    def argmax_action(self, q_values: np.ndarray, valid_actions: np.ndarray | None = None) -> int:
+        if valid_actions is not None:
+            if valid_actions.size != q_values.size:
+                raise ValueError("valid_actions mask and q_values must have same shape")
+            masked_q = np.array(q_values, dtype=float, copy=True)
+            if not np.any(valid_actions):
+                masked_q = np.array(q_values, dtype=float, copy=True)
+            else:
+                masked_q[~valid_actions] = float("-inf")
+            q_values = masked_q
+
         if np.all(np.isnan(q_values)):
             return int(self.rng.integers(self.n_actions))
         max_value = np.nanmax(q_values)
@@ -43,9 +53,9 @@ class BaseAgent(ABC):
             return int(max_indices[0])
         return int(self.rng.choice(max_indices))
 
-    def greedy_action(self, state: np.ndarray) -> int:
+    def greedy_action(self, state: np.ndarray, valid_actions: np.ndarray | None = None) -> int:
         q_values = self.q_values(state)
-        return self.argmax_action(q_values)
+        return self.argmax_action(q_values, valid_actions)
 
     def q_values(self, state: np.ndarray) -> np.ndarray:
         raise NotImplementedError

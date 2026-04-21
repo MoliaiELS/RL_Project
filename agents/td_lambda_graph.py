@@ -1,121 +1,27 @@
+from __future__ import annotations
+
+import copy
+import warnings
+
 import numpy as np
 import torch
 import torch.nn as nn
+
+from utils.action_mask import masked_q_values, select_action_from_valid_actions
+from utils.returns import compute_lambda_returns
+
 from .base_agent import BaseAgent
-
-DIRECTIONS = [(-1, 0), (0, 1), (1, 0), (0, -1)]
-
-
-class GraphEncoder(nn.Module):
-    """A simple cell-level graph encoder for maze observations."""
-
-    def __init__(self, hidden_dim: int = 64, num_layers: int = 2, dropout: float = 0.0):
-        super().__init__()
-        self.input_dim = 11
-        self.hidden_dim = hidden_dim
-        self.node_proj = nn.Linear(self.input_dim, hidden_dim)
-        self.layers = nn.ModuleList(
-            [nn.Linear(hidden_dim * 2, hidden_dim) for _ in range(num_layers)]
-        )
-        self.activation = nn.ReLU(inplace=True)
-        self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
-
-    def forward(self, node_features: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
-        h = self.node_proj(node_features)
-        for layer in self.layers:
-            neighbor_messages = adjacency @ h
-            h = torch.cat([h, neighbor_messages], dim=-1)
-            h = layer(h)
-            h = self.activation(h)
-            h = self.dropout(h)
-        return h
-
-    def build_graph(self, observation: np.ndarray, device: torch.device):
-        obs = np.asarray(observation, dtype=np.float32)
-        if obs.ndim != 3 or obs.shape[2] < 3:
-            raise ValueError(
-                "Expected a 3-channel maze observation with wall, goal, and agent planes."
-            )
-
-        wall_plane = obs[:, :, 0] > 0.5
-        goal_plane = obs[:, :, 1] > 0.5
-        agent_plane = obs[:, :, 2] > 0.5
-        height, width = wall_plane.shape
-
-        free_positions = np.argwhere(~wall_plane)
-        if free_positions.size == 0:
-            raise ValueError("Maze observation contains no traversable cells.")
-
-        node_count = len(free_positions)
-        index_map = -np.ones((height, width), dtype=np.int64)
-        for node_index, (y, x) in enumerate(free_positions):
-            index_map[y, x] = node_index
-
-        node_features = np.zeros((node_count, self.input_dim), dtype=np.float32)
-        goal_positions = np.argwhere(goal_plane)
-        goal_pos = tuple(goal_positions[0].tolist()) if goal_positions.size else (-1, -1)
-
-        for node_index, (y, x) in enumerate(free_positions):
-            node_features[node_index, 0] = float(agent_plane[y, x])
-            node_features[node_index, 1] = float(goal_plane[y, x])
-            node_features[node_index, 2] = float(y) / max(1, height - 1)
-            node_features[node_index, 3] = float(x) / max(1, width - 1)
-            if goal_pos[0] >= 0:
-                node_features[node_index, 4] = float(goal_pos[0] - y) / max(1, height - 1)
-                node_features[node_index, 5] = float(goal_pos[1] - x) / max(1, width - 1)
-            else:
-                node_features[node_index, 4] = 0.0
-                node_features[node_index, 5] = 0.0
-
-            blocked = 0
-            for direction_index, (dy, dx) in enumerate(DIRECTIONS):
-                ny, nx = y + dy, x + dx
-                if ny < 0 or ny >= height or nx < 0 or nx >= width or wall_plane[ny, nx]:
-                    node_features[node_index, 6 + direction_index] = 1.0
-                    blocked += 1
-                else:
-                    node_features[node_index, 6 + direction_index] = 0.0
-
-            node_features[node_index, 10] = float(blocked) / 4.0
-
-        adjacency = np.zeros((node_count, node_count), dtype=np.float32)
-        for node_index, (y, x) in enumerate(free_positions):
-            adjacency[node_index, node_index] = 1.0
-            for dy, dx in DIRECTIONS:
-                ny, nx = y + dy, x + dx
-                if 0 <= ny < height and 0 <= nx < width and not wall_plane[ny, nx]:
-                    neighbor_index = index_map[ny, nx]
-                    if neighbor_index >= 0:
-                        adjacency[node_index, neighbor_index] = 1.0
-
-        agent_positions = np.argwhere(agent_plane)
-        if agent_positions.size == 0:
-            raise ValueError("Agent position not found in observation.")
-        agent_coord = tuple(agent_positions[0].tolist())
-        agent_index = int(index_map[agent_coord])
-        if agent_index < 0:
-            raise ValueError("Agent is standing on a wall cell.")
-
-        goal_index = int(index_map[goal_pos]) if goal_pos[0] >= 0 else -1
-
-        return (
-            torch.from_numpy(node_features).to(device),
-            torch.from_numpy(adjacency).to(device),
-            torch.from_numpy(free_positions.astype(np.int64)).to(device),
-            agent_index,
-            goal_index,
-            torch.from_numpy(index_map).to(device),
-        )
+from .graph_encoder import GraphEncoder, MazeGraphData, build_maze_graph
 
 
 class ActionValueHead(nn.Module):
     def __init__(self, hidden_dim: int, n_actions: int):
         super().__init__()
-        self.hidden_dim = hidden_dim
-        self.n_actions = n_actions
         self.net = nn.Sequential(
             nn.Linear(hidden_dim * 2 + n_actions + 1, hidden_dim),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
             nn.Linear(hidden_dim, 1),
         )
 
@@ -126,96 +32,188 @@ class ActionValueHead(nn.Module):
         action_onehot: torch.Tensor,
         invalid_flag: torch.Tensor,
     ) -> torch.Tensor:
-        x = torch.cat([agent_embedding, neighbor_embedding, action_onehot, invalid_flag], dim=-1)
-        return self.net(x).squeeze(-1)
+        features = torch.cat(
+            [agent_embedding, neighbor_embedding, action_onehot, invalid_flag],
+            dim=-1,
+        )
+        return self.net(features).squeeze(-1)
+
+
+class GraphActionValueNetwork(nn.Module):
+    def __init__(
+        self,
+        n_actions: int,
+        hidden_dim: int = 64,
+        num_layers: int = 2,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.n_actions = n_actions
+        self.hidden_dim = hidden_dim
+        self.encoder = GraphEncoder(hidden_dim=hidden_dim, num_layers=num_layers, dropout=dropout)
+        self.head = ActionValueHead(hidden_dim=hidden_dim, n_actions=n_actions)
+        self.register_buffer("action_eye", torch.eye(n_actions, dtype=torch.float32))
+
+    def forward(self, graph: MazeGraphData) -> torch.Tensor:
+        node_embeddings = self.encoder(graph.node_features, graph.normalized_adjacency)
+        agent_embedding = node_embeddings[graph.agent_index : graph.agent_index + 1]
+        zero_neighbor = node_embeddings.new_zeros((1, self.hidden_dim))
+
+        q_values = []
+        for action in range(self.n_actions):
+            neighbor_index = graph.action_neighbor_indices[action]
+            neighbor_embedding = (
+                node_embeddings[neighbor_index : neighbor_index + 1]
+                if neighbor_index >= 0
+                else zero_neighbor
+            )
+            invalid_flag = node_embeddings.new_tensor([[1.0 if neighbor_index < 0 else 0.0]])
+            action_onehot = self.action_eye[action : action + 1]
+            q_values.append(
+                self.head(
+                    agent_embedding,
+                    neighbor_embedding,
+                    action_onehot,
+                    invalid_flag,
+                )
+            )
+
+        return torch.cat(q_values, dim=0)
 
 
 class TDLambdaGraphAgent(BaseAgent):
-    """Graph-based TD(λ) agent for maze navigation."""
+    """Graph-based forward-view TD(lambda) agent with masked action selection."""
 
     def __init__(
         self,
         n_actions: int = 4,
         gamma: float = 0.99,
-        alpha: float = 5e-4,
-        epsilon: float = 0.1,
-        lambda_value: float = 0.9,
+        alpha: float = 2e-4,
+        epsilon: float = 0.3,
+        lambda_value: float = 0.7,
         hidden_dim: int = 64,
         num_layers: int = 2,
         dropout: float = 0.0,
         seed: int | None = None,
         device: str | None = None,
+        use_target_network: bool = True,
+        target_tau: float = 0.005,
+        target_update_freq: int = 1,
+        batch_size: int = 64,
+        gradient_clip: float = 1.0,
     ):
-        state_size = hidden_dim
-        super().__init__(state_size, n_actions, gamma, alpha, epsilon, seed)
+        super().__init__(hidden_dim, n_actions, gamma, alpha, epsilon, seed)
         self.lambda_value = float(lambda_value)
-        self.hidden_dim = hidden_dim
-        self.device = (
-            torch.device("cuda")
-            if device is None and torch.cuda.is_available()
-            else torch.device(device or "cpu")
-        )
-        self.encoder = GraphEncoder(hidden_dim=hidden_dim, num_layers=num_layers, dropout=dropout)
-        self.head = ActionValueHead(hidden_dim=hidden_dim, n_actions=n_actions)
-        self.model = nn.ModuleDict({"encoder": self.encoder, "head": self.head})
-        self.model.to(self.device)
-        self.eligibility = [torch.zeros_like(param, device=self.device) for param in self.model.parameters()]
+        self.hidden_dim = int(hidden_dim)
+        self.num_layers = int(num_layers)
+        self.dropout = float(dropout)
+        self.device = self._resolve_device(device)
+        self.use_target_network = bool(use_target_network)
+        self.target_tau = float(target_tau)
+        self.target_update_freq = max(1, int(target_update_freq))
+        self.batch_size = max(1, int(batch_size))
+        self.gradient_clip = float(gradient_clip)
+        self.update_mode = "lambda_return"
 
-    def _action_onehot(self, action: int) -> torch.Tensor:
-        onehot = torch.zeros(self.n_actions, device=self.device)
-        if 0 <= action < self.n_actions:
-            onehot[action] = 1.0
-        return onehot
+        self.online_network = GraphActionValueNetwork(
+            n_actions=n_actions,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+        ).to(self.device)
+        self.target_network = copy.deepcopy(self.online_network).to(self.device)
+        self.target_network.eval()
+        self.optimizer = torch.optim.Adam(self.online_network.parameters(), lr=self.alpha)
+        self.optimizer_steps = 0
 
-    def _compute_q_values(
+        # Compatibility handles for older scripts/checkpoints.
+        self.model = self.online_network
+        self.encoder = self.online_network.encoder
+        self.head = self.online_network.head
+
+    def _resolve_device(self, device: str | None) -> torch.device:
+        if device is None:
+            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        try:
+            resolved = torch.device(device)
+        except Exception as exc:
+            warnings.warn(f"Invalid device '{device}', falling back to CPU. ({exc})")
+            return torch.device("cpu")
+
+        if resolved.type == "cuda" and not torch.cuda.is_available():
+            warnings.warn("CUDA was requested but is unavailable, falling back to CPU.")
+            return torch.device("cpu")
+        return resolved
+
+    def _build_graph(self, observation: np.ndarray) -> MazeGraphData:
+        return build_maze_graph(observation, self.device)
+
+    def _q_values_tensor(
         self,
-        node_features: torch.Tensor,
-        adjacency: torch.Tensor,
-        node_positions: torch.Tensor,
-        agent_index: int,
-        index_map: torch.Tensor,
-    ) -> torch.Tensor:
-        node_embeddings = self.encoder(node_features, adjacency)
-        agent_embedding = node_embeddings[agent_index : agent_index + 1]
-        agent_pos = tuple(node_positions[agent_index].tolist())
-
-        q_values = []
-        for action in range(self.n_actions):
-            ny = int(agent_pos[0] + DIRECTIONS[action][0])
-            nx = int(agent_pos[1] + DIRECTIONS[action][1])
-            invalid = True
-            neighbor_embedding = torch.zeros((1, self.hidden_dim), device=self.device)
-            if 0 <= ny < index_map.shape[0] and 0 <= nx < index_map.shape[1]:
-                neighbor_index = int(index_map[ny, nx].item())
-                if neighbor_index >= 0:
-                    invalid = False
-                    neighbor_embedding = node_embeddings[neighbor_index : neighbor_index + 1]
-
-            invalid_flag = torch.tensor([[1.0 if invalid else 0.0]], device=self.device)
-            action_onehot = self._action_onehot(action).unsqueeze(0)
-            q_value = self.head(agent_embedding, neighbor_embedding, action_onehot, invalid_flag)
-            if invalid:
-                q_value = q_value - 5.0
-            q_values.append(q_value)
-
-        return torch.stack(q_values).squeeze(-1)
-
-    def _build_graph(self, observation: np.ndarray):
-        return self.encoder.build_graph(observation, self.device)
+        state: np.ndarray,
+        network: GraphActionValueNetwork | None = None,
+        require_grad: bool = False,
+    ) -> tuple[torch.Tensor, MazeGraphData]:
+        graph = self._build_graph(state)
+        model = network or self.online_network
+        if require_grad:
+            q_values = model(graph)
+        else:
+            with torch.no_grad():
+                q_values = model(graph)
+        return q_values, graph
 
     def q_values(self, state: np.ndarray) -> np.ndarray:
-        with torch.no_grad():
-            node_features, adjacency, node_positions, agent_index, _, index_map = self._build_graph(state)
-            q_values = self._compute_q_values(node_features, adjacency, node_positions, agent_index, index_map)
-            return q_values.cpu().numpy()
+        q_values, _ = self._q_values_tensor(state, require_grad=False)
+        return q_values.detach().cpu().numpy()
+
+    def masked_q_values(self, state: np.ndarray) -> np.ndarray:
+        q_values, graph = self._q_values_tensor(state, require_grad=False)
+        return masked_q_values(q_values.detach().cpu().numpy(), graph.valid_action_mask)
+
+    def select_action_details(
+        self,
+        state: np.ndarray,
+        greedy: bool = False,
+    ) -> tuple[int, dict]:
+        q_values, graph = self._q_values_tensor(state, require_grad=False)
+        q_values_np = q_values.detach().cpu().numpy()
+        if greedy:
+            action = select_action_from_valid_actions(
+                q_values_np,
+                graph.valid_action_mask,
+                self.rng,
+                greedy=True,
+            )
+        else:
+            explore = self.rng.random() < self.epsilon
+            action = select_action_from_valid_actions(
+                q_values_np,
+                graph.valid_action_mask,
+                self.rng,
+                greedy=not explore,
+            )
+
+        return action, {
+            "q_values": q_values_np,
+            "masked_q_values": masked_q_values(q_values_np, graph.valid_action_mask),
+            "valid_action_mask": graph.valid_action_mask.copy(),
+            "valid_action_count": int(np.count_nonzero(graph.valid_action_mask)),
+            "selected_valid": bool(graph.valid_action_mask[action]) if np.any(graph.valid_action_mask) else False,
+            "used_fallback": bool(not np.any(graph.valid_action_mask)),
+        }
 
     def select_action(self, state: np.ndarray) -> int:
-        if self.rng.random() < self.epsilon:
-            return int(self.rng.integers(self.n_actions))
-        return self.argmax_action(self.q_values(state))
+        action, _ = self.select_action_details(state, greedy=False)
+        return action
+
+    def greedy_action(self, state: np.ndarray) -> int:
+        action, _ = self.select_action_details(state, greedy=True)
+        return action
 
     def new_episode(self) -> None:
-        self.eligibility = [torch.zeros_like(param, device=self.device) for param in self.model.parameters()]
+        return None
 
     def update(
         self,
@@ -225,44 +223,144 @@ class TDLambdaGraphAgent(BaseAgent):
         next_state: np.ndarray,
         done: bool,
         next_action: int | None = None,
-    ) -> None:
-        node_features, adjacency, node_positions, agent_index, _, index_map = self._build_graph(state)
-        current_q_values = self._compute_q_values(node_features, adjacency, node_positions, agent_index, index_map)
-        current_q = current_q_values[action]
+    ) -> dict:
+        return {
+            "state": np.array(state, copy=True),
+            "action": int(action),
+            "reward": float(reward),
+            "next_state": None if next_state is None else np.array(next_state, copy=True),
+            "done": bool(done),
+            "next_action": None if next_action is None else int(next_action),
+        }
 
-        if done or next_action is None:
-            target = torch.tensor(float(reward), dtype=torch.float32, device=self.device)
-        else:
-            with torch.no_grad():
-                next_node_features, next_adjacency, next_node_positions, next_agent_index, _, next_index_map = self._build_graph(next_state)
-                next_q_values = self._compute_q_values(
-                    next_node_features,
-                    next_adjacency,
-                    next_node_positions,
-                    next_agent_index,
-                    next_index_map,
-                )
-                target = float(reward) + self.gamma * next_q_values[next_action]
+    def _bootstrap_q_value(self, state: np.ndarray, action: int) -> float:
+        model = self.target_network if self.use_target_network else self.online_network
+        q_values, _ = self._q_values_tensor(state, network=model, require_grad=False)
+        return float(q_values[action].item())
 
-        td_error = target - current_q
-        self.model.zero_grad()
-        current_q.backward()
+    def compute_lambda_returns(self, transitions: list[dict]) -> list[float]:
+        return compute_lambda_returns(
+            transitions,
+            gamma=self.gamma,
+            lambda_value=self.lambda_value,
+            bootstrap_q=self._bootstrap_q_value,
+        )
 
+    def _predict_action_value(self, state: np.ndarray, action: int) -> torch.Tensor:
+        q_values, _ = self._q_values_tensor(state, require_grad=True)
+        return q_values[action]
+
+    def _soft_update_target_network(self) -> None:
         with torch.no_grad():
-            for idx, param in enumerate(self.model.parameters()):
-                if param.grad is None:
-                    continue
-                grad = param.grad.detach().clamp(-5.0, 5.0)
-                self.eligibility[idx] = self.gamma * self.lambda_value * self.eligibility[idx] + grad
-                self.eligibility[idx].clamp_(-10.0, 10.0)
-                param.add_(self.alpha * td_error * self.eligibility[idx])
+            for target_param, online_param in zip(
+                self.target_network.parameters(),
+                self.online_network.parameters(),
+            ):
+                target_param.data.mul_(1.0 - self.target_tau).add_(self.target_tau * online_param.data)
+
+    def update_from_episode(self, transitions: list[dict]) -> dict:
+        if not transitions:
+            return {
+                "loss": 0.0,
+                "mean_predicted_q": 0.0,
+                "mean_td_target": 0.0,
+                "optimizer_steps": 0,
+            }
+
+        lambda_returns = self.compute_lambda_returns(transitions)
+        indices = np.arange(len(transitions))
+        batch_size = min(self.batch_size, len(transitions))
+
+        losses: list[float] = []
+        predicted_means: list[float] = []
+        target_means: list[float] = []
+        optimizer_steps = 0
+
+        for start in range(0, len(indices), batch_size):
+            batch_indices = indices[start : start + batch_size]
+            targets = torch.tensor(
+                [lambda_returns[idx] for idx in batch_indices],
+                dtype=torch.float32,
+                device=self.device,
+            )
+            predictions = torch.stack(
+                [
+                    self._predict_action_value(
+                        transitions[idx]["state"],
+                        transitions[idx]["action"],
+                    )
+                    for idx in batch_indices
+                ]
+            )
+
+            loss = nn.functional.mse_loss(predictions, targets)
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.online_network.parameters(), self.gradient_clip)
+            self.optimizer.step()
+
+            optimizer_steps += 1
+            self.optimizer_steps += 1
+            losses.append(float(loss.item()))
+            predicted_means.append(float(predictions.detach().mean().item()))
+            target_means.append(float(targets.mean().item()))
+
+            if self.use_target_network and self.optimizer_steps % self.target_update_freq == 0:
+                self._soft_update_target_network()
+
+        return {
+            "loss": float(np.mean(losses)),
+            "mean_predicted_q": float(np.mean(predicted_means)),
+            "mean_td_target": float(np.mean(target_means)),
+            "optimizer_steps": optimizer_steps,
+        }
 
     def save(self, path: str) -> None:
-        torch.save(self.model.state_dict(), path)
+        torch.save(
+            {
+                "online": self.online_network.state_dict(),
+                "target": self.target_network.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "config": {
+                    "hidden_dim": self.hidden_dim,
+                    "num_layers": self.num_layers,
+                    "dropout": self.dropout,
+                    "n_actions": self.n_actions,
+                    "gamma": self.gamma,
+                    "alpha": self.alpha,
+                    "epsilon": self.epsilon,
+                    "lambda_value": self.lambda_value,
+                    "use_target_network": self.use_target_network,
+                    "target_tau": self.target_tau,
+                    "target_update_freq": self.target_update_freq,
+                    "batch_size": self.batch_size,
+                    "gradient_clip": self.gradient_clip,
+                },
+            },
+            path,
+        )
 
     def load(self, path: str) -> None:
-        state_dict = torch.load(path, map_location=self.device)
-        self.model.load_state_dict(state_dict)
+        try:
+            checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        except TypeError:
+            checkpoint = torch.load(path, map_location=self.device)
+        if isinstance(checkpoint, dict) and "online" in checkpoint:
+            self.online_network.load_state_dict(checkpoint["online"])
+            self.target_network.load_state_dict(checkpoint.get("target", checkpoint["online"]))
+            if "optimizer" in checkpoint:
+                try:
+                    self.optimizer.load_state_dict(checkpoint["optimizer"])
+                except ValueError:
+                    warnings.warn("Skipping optimizer state load because it is incompatible with the current agent.")
+        else:
+            self.online_network.load_state_dict(checkpoint)
+            self.target_network.load_state_dict(checkpoint)
+
+        self.model = self.online_network
+        self.encoder = self.online_network.encoder
+        self.head = self.online_network.head
 
 
-__all__ = ["GraphEncoder", "TDLambdaGraphAgent"]
+__all__ = ["ActionValueHead", "GraphActionValueNetwork", "TDLambdaGraphAgent"]
