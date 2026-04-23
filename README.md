@@ -1,118 +1,318 @@
-# Robot Navigation with TD(λ)
+# Robot Navigation with TD Control Variants
 
-This project implements a MiniGrid-based robot navigation benchmark and compares TD(0), TD(λ), and PPO.
+This repository implements a small reinforcement learning benchmark for robot navigation in grid mazes and MiniGrid environments. The codebase centers on temporal-difference control, starting from linear TD/Q baselines and extending toward richer state representations for navigation:
 
-## Structure
-- `envs/`: MiniGrid environment creation and state encoding
-- `agents/`: TD(0), TD(λ) and PPO agent implementations
-- `train/`: training entrypoints for TD algorithms and PPO
-- `eval/`: evaluation utilities
-- `utils/`: plotting and helper utilities
+- `TD(0)` and linear `TD(lambda)` control on flattened observations
+- `TD(lambda)` with action-conditional handcrafted navigation features
+- `TD(lambda)` with a CNN over raw maze observations
+- `TD(lambda)` with a graph encoder for topology-aware generalization
+- comparison baselines with linear Q-learning and PPO
+
+The project also includes custom maze environments, evaluation/replay tools for several agents, and curriculum-style scripts for dynamic and randomized maze training.
+
+## What Is In This Repo
+
+- `envs/`
+  Custom maze environments and MiniGrid environment wrappers.
+- `agents/`
+  Agent implementations for Q-learning, TD variants, CNN TD, graph TD, and PPO.
+- `train/`
+  Main training entrypoints for the supported algorithms.
+- `scripts/`
+  Higher-level experiment scripts, including dynamic maze scheduling and graph curriculum training.
+- `eval/`
+  Evaluation, replay, and baseline comparison utilities.
+- `utils/`
+  Plotting helpers used by training and evaluation scripts.
+
+## Environment Support
+
+The repository supports two environment families:
+
+- `Maze-*`
+  Custom 3-channel maze observations with wall, goal, and agent planes.
+- `MiniGrid-*`
+  Standard MiniGrid environments wrapped with `FlatObsWrapper`.
+
+Built-in maze IDs include:
+
+- `Maze-Easy`
+- `Maze-Medium`
+- `Maze-Hard`
+- `Maze-Stage`
+- `Maze-Auto`
+- `Maze-Auto-Random`
+- `Maze-Auto-9x9`
+- `Maze-Auto-Random-9x9`
+
+Notes:
+
+- `Maze-Auto-*` uses generated mazes. If `mazelib` is unavailable, the code falls back to an internal maze generator.
+- Maze environments use shaped rewards by default. You can disable Manhattan-distance shaping with `--no-manhattan-distance`.
+- `train_td.py` supports both `Maze-*` and `MiniGrid-*`.
+- `train_td_action_features.py`, `train_td_cnn.py`, and `train_td_graph.py` are maze-focused and expect the custom 3-channel maze observation format.
+
+## Algorithms
+
+### 1. Linear TD control
+
+`train/train_td.py` supports:
+
+- `td0`
+  Linear TD/Q-style control on flattened observations.
+- `tdlambda`
+  Linear `TD(lambda)` control with eligibility traces and on-policy next-action bootstrapping.
+
+This is the simplest control pipeline in the repo and is the best starting point if you want a compact baseline.
+
+### 2. TD(lambda) with action-conditional features
+
+`train/train_td_action_features.py` replaces flat state encoding with explicit per-action navigation features such as:
+
+- invalid move indicator
+- distance-to-goal change
+- free-neighbor ratio
+- dead-end and corridor heuristics
+- local wall and goal patches around the candidate next position
+
+This keeps the TD control framework simple while making the value function more navigation-aware.
+
+### 3. TD(lambda) with a CNN
+
+`train/train_td_cnn.py` learns action values directly from raw maze observations using a small convolutional network and eligibility traces in parameter space.
+
+### 4. TD(lambda) with a graph encoder
+
+`train/train_td_graph.py` converts the maze into a graph of traversable cells, encodes the graph with message passing, and predicts action values from local topology-aware embeddings. This is the most general representation in the repo and is the main direction for cross-maze generalization.
+
+### 5. Additional baselines
+
+- `train/train_q.py`
+  Linear Q-learning baseline.
+- `train/train_ppo.py`
+  PPO baseline built on `stable-baselines3`.
 
 ## Setup
-1. Create a Python environment.
-2. Install dependencies:
+
+### Option 1: existing Conda environment
+
+If you already use the course/project Conda environment:
+
+```powershell
+& "D:\programfile\anaconda3\shell\condabin\conda-hook.ps1"
+conda activate RL_Project
+```
+
+### Option 2: fresh Python environment
 
 ```bash
 pip install -r requirements.txt
 ```
 
-If you still have the deprecated `gym-minigrid` package installed, replace it with `minigrid`:
+Main dependencies:
+
+- `gymnasium`
+- `minigrid`
+- `mazelib`
+- `numpy`
+- `torch`
+- `matplotlib`
+- `stable-baselines3`
+
+If you still have the older `gym-minigrid` package installed, prefer the modern `minigrid` package instead.
+
+## Quick Start
+
+### Linear TD(lambda) on a fixed maze
 
 ```bash
-pip uninstall gym-minigrid
-pip install minigrid
+python -m train.train_td --env-id Maze-Easy --method tdlambda --num-episodes 300
 ```
 
-The project also supports auto-generated mazes via `mazelib` when installed. If `mazelib` is not available, the code falls back to a built-in maze generator.
-
-## Quick start
-
-Train TD(λ) on a maze task with obstacles:
+### TD(0) baseline
 
 ```bash
-python train/train_td.py --env-id Maze-Easy --num-episodes 1000 --lambda-value 0.8
+python -m train.train_td --env-id Maze-Easy --method td0 --num-episodes 300
 ```
 
-Train TD(λ) on a harder staged maze:
+### Linear TD(lambda) on MiniGrid
 
 ```bash
-python train/train_td.py --env-id Maze-Stage --num-episodes 1000 --lambda-value 0.8
+python -m train.train_td --env-id MiniGrid-Empty-8x8-v0 --method tdlambda --num-episodes 500
 ```
 
-Train TD(λ) on an auto-generated maze:
+### Action-feature TD(lambda)
 
 ```bash
-python train/train_td.py --env-id Maze-Auto-9x9 --num-episodes 1000 --lambda-value 0.8
+python -m train.train_td_action_features --env-id Maze-Easy --num-episodes 300 --patch-radius 2
 ```
 
-Train TD(λ) on an auto-generated maze that regenerates every reset:
+### CNN TD(lambda)
 
 ```bash
-python train/train_td.py --env-id Maze-Auto-Random-9x9 --num-episodes 1000 --lambda-value 0.8
+python -m train.train_td_cnn --env-id Maze-Easy --num-episodes 300 --device cpu
 ```
 
-Train TD(λ) on a MiniGrid task:
+### Graph TD(lambda)
 
 ```bash
-python train/train_td.py --env-id MiniGrid-Empty-8x8-v0 --num-episodes 1000 --lambda-value 0.8 --epsilon 1.0 --epsilon-decay 0.995 --epsilon-min 0.05
+python -m train.train_td_graph --env-id Maze-Auto-Random-9x9 --num-episodes 800 --device cpu
 ```
 
-Model and plot files are saved under a timestamped folder inside `saved_models` by default, for example:
+### Q-learning baseline
+
+```bash
+python -m train.train_q --env-id Maze-Easy --num-episodes 250
+```
+
+### PPO baseline
+
+```bash
+python -m train.train_ppo --env-id MiniGrid-Empty-8x8-v0 --total-timesteps 100000
+```
+
+## Advanced Training Scripts
+
+### Dynamic maze scheduling for action-feature TD
+
+`scripts/train_td_action_features_dynamic_maze.py` supports a two-phase setup:
+
+- optional pretraining on a fixed auto-generated maze
+- later training on randomized mazes with configurable change frequency
+
+Example:
+
+```bash
+python -m scripts.train_td_action_features_dynamic_maze \
+  --pretrain-env-id Maze-Auto \
+  --pretrain-episodes 400 \
+  --env-id Maze-Auto-Random-9x9 \
+  --num-episodes 1200 \
+  --stage-lengths 300,400,500 \
+  --change-frequencies 50,20,1
+```
+
+This is useful when you want to move from stable early learning to progressively harder generalization.
+
+### Curriculum training for graph TD
+
+`scripts/train_td_graph_curriculum.py` runs a multi-stage curriculum that moves from fixed random seeds toward fully randomized mazes.
+
+Example:
+
+```bash
+python -m scripts.train_td_graph_curriculum \
+  --curriculum-name graph_td_curriculum \
+  --stage-episodes 400,300,300,300,500 \
+  --stage-random-ratios 0.2,0.5,0.8 \
+  --device cpu
+```
+
+Each stage launches `train/train_td_graph.py`, saves its own run directory, and passes the previous stage checkpoint into the next stage.
+
+## Evaluation and Replay
+
+`eval/evaluate.py` currently supports evaluation for:
+
+- `td0`
+- `tdlambda`
+- `tdlambda_actionfeatures`
+- `tdlambda_cnn`
+
+If `metadata.json` is present, the script can infer the saved environment and agent type automatically.
+
+### Evaluate a saved model
+
+```bash
+python -m eval.evaluate --model-path saved_models/<run_dir>/tdlambda_Maze-Easy.npy
+```
+
+### Render evaluation episodes
+
+```bash
+python -m eval.evaluate --model-path saved_models/<run_dir>/tdlambda_Maze-Easy.npy --render
+```
+
+### Save replay frames
+
+```bash
+python -m eval.evaluate --model-path saved_models/<run_dir>/tdlambda_Maze-Easy.npy --save-replay
+```
+
+### Replay saved frames later
+
+```bash
+python -m eval.evaluate --model-path saved_models/<run_dir>/tdlambda_Maze-Easy.npy --replay
+```
+
+Evaluation writes:
+
+- `eval_summary.json`
+- `eval_rewards.png`
+- optional `replay/episode_XX.npz`
+
+Note:
+
+- the current evaluator does not yet load `tdlambda_graph`, `qlearning`, or `ppo` checkpoints.
+
+## Comparing Two Baselines
+
+`eval/compare_two_agents.py` can train and compare two agents by plotting running-mean reward curves.
+
+Currently supported in that script:
+
+- `ppo`
+- `tdlambda`
+- `qlearning`
+
+Example:
+
+```bash
+python -m eval.compare_two_agents \
+  --agent1 ppo \
+  --agent2 tdlambda \
+  --env-id Maze-Auto-Random-9x9 \
+  --agent1-args "--total-timesteps 50000" \
+  --agent2-args "--num-episodes 500 --lambda-value 0.9" \
+  --window 10
+```
+
+## Saved Outputs
+
+Training runs are saved into timestamped directories under `saved_models/` by default. A typical run contains some or all of the following:
+
+- trained model checkpoint
+- `metadata.json`
+- `episode_rewards.npy`
+- learning-curve plot
+- combined training/evaluation plot
+- `greedy_eval_history.json`
+
+Example:
 
 ```text
-saved_models/20260414-133548-tdlambda-Maze-Easy/
+saved_models/20260422-122229-tdlambda-Maze-Easy/
+  metadata.json
+  episode_rewards.npy
   tdlambda_Maze-Easy.npy
   tdlambda_learning_curve.png
 ```
 
-Evaluate a trained TD agent and save replay frames for later playback. Evaluation now also writes `eval_summary.json` and `eval_rewards.png` into the same model folder:
+## Important Current Limitations
 
-```bash
-python eval/evaluate.py --env-id MiniGrid-Empty-8x8-v0 --model-path saved_models/<timestamp>-tdlambda-MiniGrid-Empty-8x8-v0/tdlambda_MiniGrid-Empty-8x8-v0.npy --render --save-replay
-```
+- `action_features`, `cnn`, and `graph` training are designed for the custom maze observation format, not generic MiniGrid observations.
+- `eval/evaluate.py` does not yet support graph checkpoints.
+- `eval/compare_two_agents.py` only compares `ppo`, `tdlambda`, and `qlearning`.
+- Some older files still contain encoding artifacts in comments or strings, but the main training paths are intact.
 
-Replay a saved TD agent animation from the model folder:
+## Recommended Starting Points
 
-```bash
-python eval/evaluate.py --env-id MiniGrid-Empty-8x8-v0 --model-path saved_models/<timestamp>-tdlambda-MiniGrid-Empty-8x8-v0/tdlambda_MiniGrid-Empty-8x8-v0.npy --replay
-```
+If you are new to the repo:
 
-If the saved model contains metadata, you can omit `--env-id` and the evaluator will infer the environment from the model folder:
+1. Start with `train/train_td.py` on `Maze-Easy`.
+2. Move to `train/train_td_action_features.py` to see how representation changes improve navigation behavior.
+3. Use `train/train_td_graph.py` or the curriculum script when you want to study generalization to randomized mazes.
 
-```bash
-python eval/evaluate.py --model-path saved_models/<timestamp>-tdlambda-MiniGrid-Empty-8x8-v0/tdlambda_MiniGrid-Empty-8x8-v0.npy --replay
-```
+## License / Course Context
 
-Render a trained TD agent in the maze env:
-
-```bash
-python eval/evaluate.py --env-id Maze-Easy --model-path saved_models/<timestamp>-tdlambda-Maze-Easy/tdlambda_Maze-Easy.npy --render --save-replay
-```
-
-Replay a saved maze replay:
-
-```bash
-python eval/evaluate.py --env-id Maze-Easy --model-path saved_models/<timestamp>-tdlambda-Maze-Easy/tdlambda_Maze-Easy.npy --replay
-```
-
-## Train Baseline Model
-
-Train Q-Learning for comparison:
-
-```bash
-python train/train_q.py --env-id Maze-Easy --num-episodes 200
-```
-
-Train PPO for comparison:
-
-```bash
-python train/train_ppo.py --env-id MiniGrid-Empty-8x8-v0 --total-timesteps 100000
-```
-
-Change env-id for further experiments.
-
-## Notes
-- `TDZeroAgent` uses linear Q-learning with tile-style state encoding.
-- `TDLambdaAgent` is implemented from scratch using linear Q(λ) with accumulating eligibility traces.
-- PPO is implemented using `stable-baselines3` for policy-based comparison.
+This repository appears to be coursework for an RL final project focused on robot navigation with TD-based methods. If you distribute or reuse it outside the course setting, check your team and course policy first.
