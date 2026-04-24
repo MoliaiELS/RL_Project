@@ -277,6 +277,74 @@ python -m eval.compare_two_agents \
   --window 10
 ```
 
+## Compare Multiple Agents
+
+`eval/compare_all_agents.py` trains three or more agents in one run and produces a single plot with all running‑mean curves.
+
+Supported agents: `td0`, `tdlambda`, `qlearning`, `ppo`, `tdlambda_actionfeatures`.
+
+```bash
+python -m eval.compare_all_agents \
+  --env-id Maze-Stage \
+  --agents td0 tdlambda qlearning ppo tdlambda_actionfeatures \
+  --window 30 \
+  --agent-args td0 "--num-episodes 3000" \
+               tdlambda "--num-episodes 3000 --lambda-value 0.9" \
+               qlearning "--num-episodes 3000" \
+               ppo "--total-timesteps 50000" \
+               tdlambda_actionfeatures "--num-episodes 3000 --lambda value 0.9"
+```
+
+The combined plot is stored inside `saved_models/comparison/<timestamp>_<env-id>/comparison_<env-id>.png.`
+
+## Visualizing a Trained Agent
+`eval/visualize_agent.py` runs one greedy episode of any trained agent and can optionally save a GIF or display the episode live.
+
+Supported agent types: `ppo`, `td0`, `tdlambda`, `qlearning`, `tdlambda_actionfeatures`.
+
+**Generate a GIF (no window)**
+
+```bash
+python -m eval.visualize_agent \
+  --agent-type tdlambda \
+  --model-path saved_models/.../tdlambda_Maze-Easy.npy \
+  --save-gif --no-display
+```
+
+**Show the episode in a window**
+
+```bash
+python -m eval.visualize_agent \
+  --agent-type ppo \
+  --model-path saved_models/.../ppo_Maze-Easy.zip \
+  --env-id Maze-Easy --render
+```
+
+**Key options:**
+
+`--save-gif` : save the episode as a GIF (auto‑named <model_basename>_<env-id>.gif).
+
+`--gif-scale` : upscaling factor for the GIF (default 10) – improves visibility in presentations.
+
+`--no-display` : suppress the live matplotlib window (useful for batch generation).
+
+`--env-id` : environment ID; if omitted, read from metadata.json.
+
+**Requirements**: imageio and Pillow (pip install imageio Pillow).
+
+## Batch GIF Generation
+
+`eval/batch_generate_gifs.py` scans all models in `saved_models/` and automatically generates a GIF for each one.
+
+Supports PPO (`.zip`) and linear agents (`.npy` with names `tdlambda_*`, `td0_*`, `qlearning_*`).
+
+Configuration (hardcoded at the top of the script):` GIF_SCALE = 10`, `GIF_FPS = 10`, `NO_DISPLAY = True`.
+
+```bash
+python -m eval.batch_generate_gifs
+Each GIF is saved next to its original model file as <model_basename>_<env-id>.gif.
+```
+
 ## Saved Outputs
 
 Training runs are saved into timestamped directories under `saved_models/` by default. A typical run contains some or all of the following:
