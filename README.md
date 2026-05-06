@@ -384,3 +384,15 @@ If you are new to the repo:
 ## License / Course Context
 
 This repository appears to be coursework for an RL final project focused on robot navigation with TD-based methods. If you distribute or reuse it outside the course setting, check your team and course policy first.
+
+## Team Members and Contributions
+
+This project was completed by a 3-person team for the AIAA3053 Reinforcement Learning final project.
+
+| Member | Main Contributions |
+| --- | --- |
+| Ye Guo | Designed and implemented the core TD(lambda) navigation methods, eligibility-trace update logic, action-conditional feature representation, and custom maze environment design. |
+| Hongliang Chen | Implemented and organized baseline methods, including Q-learning and PPO-related comparison experiments, and contributed to training-script organization. |
+| Junliang Huang | Conducted evaluation experiments, organized saved results, generated plots/tables, and contributed to result analysis and report revision. |
+
+All members contributed to project discussion, debugging, presentation preparation, and final report polishing.
