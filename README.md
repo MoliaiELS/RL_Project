@@ -219,8 +219,6 @@ Each stage launches `train/train_td_graph.py`, saves its own run directory, and 
 - `tdlambda_actionfeatures`
 - `tdlambda_cnn`
 
-## 🛠 Script Documentation
-
 ### 1. `evaluate.py` (The Evaluation Engine)
 
 **Usage:**
